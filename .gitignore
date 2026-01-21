@@ -66,6 +66,9 @@ Project_Spec.md
 *.xlsx
 *.xls
 
+# Model cache
+config/models_cache.json
+
 # Logs
 logs/
 *.log

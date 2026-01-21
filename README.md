@@ -18,16 +18,20 @@ cp .env.example .env
 # Edit .env and add: ANTHROPIC_API_KEY=your_key_here
 
 # 4. Place PDFs in data/input/
-# - fieldservicenextwest2026pre.pdf
-# - fieldservicenextwest2026attendees.pdf
+# - Any conference PDFs (agenda, speakers, attendees, etc.)
+# - Multiple PDFs are automatically merged
 
-# 5. Verify setup (optional but recommended)
+# 5. (Optional) Select model
+# Default: Claude 3.5 Sonnet
+# Change via Streamlit UI or edit config/model_settings.json
+
+# 6. Verify setup (optional but recommended)
 python test_setup.py
 
-# 6. Run the application
+# 7. Run the application
 python main.py          # CLI version
 # OR
-streamlit run app.py    # Dashboard version
+streamlit run app.py    # Dashboard version (with model selector)
 ```
 
 ## Troubleshooting

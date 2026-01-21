@@ -1,14 +1,29 @@
 """Main CLI entry point for Conference ICP Validator"""
 
+import sys
+import os
+
+# Fix Windows console encoding
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
 from crew_setup import run_pipeline
 from utils.event_logger import event_logger
 from agents.shared_state import shared_state
+from config.model_config import load_model_config, get_model_display_name
 import pandas as pd
-import os
-import sys
+import argparse
 
 def main():
     """Main execution function"""
+
+    parser = argparse.ArgumentParser(description='Conference ICP Validator')
+    parser.add_argument('--max-companies', type=int, default=None,
+                       help='Limit validation to first N companies (default: all)')
+    parser.add_argument('--min-confidence', type=float, default=0.7,
+                       help='Skip companies below this confidence (default: 0.7)')
+    args = parser.parse_args()
 
     # Check for input PDFs
     input_dir = 'data/input'
@@ -16,8 +31,8 @@ def main():
     pdf_files = glob.glob(os.path.join(input_dir, '*.pdf'))
 
     if not pdf_files:
-        print("❌ No PDF files found in data/input/")
-        print("\n📌 Please place conference PDFs in data/input/ directory")
+        print("[X] No PDF files found in data/input/")
+        print("\nPlease place conference PDFs in data/input/ directory")
         print("   Supported: Any conference PDFs (agenda, speakers, attendees, etc.)")
         print("\n   Examples:")
         print("   - conference_agenda.pdf")
@@ -25,13 +40,22 @@ def main():
         print("   - attendee_roster.pdf")
         sys.exit(1)
 
-    print(f"✓ Found {len(pdf_files)} PDF file(s) to process:")
+    print(f"[OK] Found {len(pdf_files)} PDF file(s) to process:")
     for pdf in pdf_files:
-        print(f"  • {os.path.basename(pdf)}")
+        print(f"  - {os.path.basename(pdf)}")
+
+    # Show selected model
+    current_model = load_model_config()
+    print(f"[OK] Using model: {get_model_display_name(current_model)}")
+
+    # Show settings
+    if args.max_companies:
+        print(f"[OK] Limit: {args.max_companies} companies")
+    print(f"[OK] Min confidence: {args.min_confidence}")
     print()
 
     # Run the pipeline
-    result = run_pipeline(input_dir)
+    result = run_pipeline(input_dir, current_model, args.min_confidence, args.max_companies)
 
     # Generate summary report
     print("\n" + "=" * 60)

@@ -5,8 +5,17 @@ import pandas as pd
 from crew_setup import run_pipeline
 from agents.shared_state import shared_state
 from utils.event_logger import event_logger
+from utils.live_logger import live_logger
+from config.model_config import (
+    get_available_models,
+    save_model_config,
+    load_model_config,
+    get_model_display_name,
+    DEFAULT_MODEL
+)
 import os
 import time
+import json
 
 st.set_page_config(
     page_title="Conference ICP Validator",
@@ -48,12 +57,109 @@ with st.sidebar:
 
     st.markdown("---")
 
+    # Model selection
+    st.markdown("### 🤖 Model Selection")
+
+    # Refresh models button
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Refresh", help="Fetch latest models from API"):
+            st.session_state.force_refresh = True
+
+    # Get available models
+    force_refresh = st.session_state.get('force_refresh', False)
+    available_models = get_available_models(force_refresh=force_refresh)
+    if force_refresh:
+        st.session_state.force_refresh = False
+        st.rerun()
+
+    # Current selected model
+    current_model = load_model_config()
+
+    # Create dropdown options
+    model_options = {}
+    default_index = 0
+
+    for idx, model in enumerate(available_models):
+        display_text = model['display_name']
+        if model.get('recommended'):
+            display_text += " ⭐"
+        model_options[display_text] = model['id']
+
+        if model['id'] == current_model:
+            default_index = idx
+
+    # Model selector
+    with col1:
+        selected_display = st.selectbox(
+            "Select Claude Model",
+            options=list(model_options.keys()),
+            index=default_index,
+            help="Choose which Claude model to use for validation",
+            label_visibility="collapsed"
+        )
+
+    selected_model = model_options[selected_display]
+
+    # Show model description
+    for model in available_models:
+        if model['id'] == selected_model:
+            st.caption(model.get('description', ''))
+            break
+
+    # Show cache info
+    import os as os_check
+    if os_check.path.exists('config/models_cache.json'):
+        try:
+            with open('config/models_cache.json', 'r') as f:
+                cache = json.load(f)
+                cached_time = cache.get('cached_at', 'unknown')
+                if cached_time != 'unknown':
+                    from datetime import datetime
+                    cached_dt = datetime.fromisoformat(cached_time)
+                    st.caption(f"Models cached: {cached_dt.strftime('%Y-%m-%d %H:%M')}")
+        except:
+            pass
+
+    # Save model selection
+    if selected_model != current_model:
+        save_model_config(selected_model)
+        st.success(f"✅ Model updated to {get_model_display_name(selected_model)}")
+
+    st.markdown("---")
+
+    # Validation settings
+    st.markdown("### ⚙️ Validation Settings")
+
+    max_companies = st.number_input(
+        "Max Companies to Validate",
+        min_value=10,
+        max_value=10000,
+        value=50,
+        step=10,
+        help="Limit validation to first N companies (saves time and API costs)"
+    )
+
+    min_confidence = st.slider(
+        "Min Confidence",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.7,
+        step=0.1,
+        help="Skip companies below this confidence score"
+    )
+
+    st.markdown("---")
+
     # Run button
     can_run = len(pdf_files) > 0 and api_key
     if st.button("🚀 Run Analysis", type="primary", disabled=not can_run):
         st.session_state.running = True
         st.session_state.start_time = time.time()
         st.session_state.input_dir = input_dir
+        st.session_state.selected_model = selected_model
+        st.session_state.max_companies = max_companies
+        st.session_state.min_confidence = min_confidence
 
     if st.button("🔄 Reset"):
         st.session_state.running = False
@@ -78,36 +184,34 @@ if st.session_state.get('running'):
     with col3:
         completion_status = st.empty()
 
-    # Agent communication log
-    st.header("💬 Agent Communication")
-    comm_log = st.empty()
+    # Live logs section
+    st.header("📋 Live Activity Log")
+    log_container = st.empty()
 
     # Run pipeline with progress updates
     with st.spinner("Agents working..."):
+        # Clear previous logs
+        live_logger.clear()
+
         # Start extraction
         extraction_status.info("🔄 Agent 1: Extracting companies...")
         status_text.text("Phase 1/2: PDF Data Extraction")
         progress_bar.progress(10)
 
-        comm_log.code("Starting PDF extraction...")
+        log_container.code("Starting pipeline...")
 
         try:
             # Run the actual pipeline
             input_dir = st.session_state.get('input_dir', 'data/input')
-            result = run_pipeline(input_dir)
+            selected_model = st.session_state.get('selected_model', load_model_config())
+            max_companies = st.session_state.get('max_companies', 50)
+            min_confidence = st.session_state.get('min_confidence', 0.7)
+            result = run_pipeline(input_dir, selected_model, min_confidence, max_companies)
 
+            # Update logs display
             extraction_status.success("✅ Agent 1: Extraction complete")
             progress_bar.progress(50)
-
-            # Show extraction stats
-            if 'extraction' in result:
-                stats = result['extraction'].get('stats', {})
-                comm_log.code(f"""[Agent 1] Extraction complete
-  • Total companies: {stats.get('total', 0)}
-  • High confidence: {stats.get('high_confidence', 0)}
-  • Flagged for review: {stats.get('flagged', 0)}
-
-[Agent 2] Starting ICP validation...""")
+            log_container.code(live_logger.get_formatted_logs())
 
             validation_status.info("🔄 Agent 2: Validating ICP fit...")
             status_text.text("Phase 2/2: ICP Validation")
@@ -119,15 +223,8 @@ if st.session_state.get('running'):
             completion_status.success("✅ Pipeline Complete!")
             status_text.text("Analysis complete!")
 
-            # Show communication summary
-            if 'validation' in result:
-                stats = result['validation'].get('stats', {})
-                comm_log.code(f"""[Agent 2] Validation complete
-  • Companies validated: {stats.get('total', 0)}
-  • Data enrichments: {stats.get('enrichments', 0)}
-  • Quality resolutions: {stats.get('resolutions', 0)}
-
-[Agent 2 → Agent 1] Shared {stats.get('enrichments', 0)} data enrichments""")
+            # Final log update
+            log_container.code(live_logger.get_formatted_logs())
 
             st.session_state.completed = True
             st.session_state.running = False
@@ -184,7 +281,7 @@ elif st.session_state.get('completed'):
         top10_columns = ['company', 'industry', 'icp_score', 'fit_level', 'team_size', 'recommended_action']
         top10_columns = [col for col in top10_columns if col in df.columns]
         top10 = df.nlargest(10, 'icp_score')[top10_columns]
-        st.dataframe(top10, use_container_width=True, hide_index=True)
+        st.dataframe(top10, width='stretch', hide_index=True)
 
         # Agent collaboration insights
         st.header("🤝 Agent Collaboration Insights")
@@ -213,17 +310,42 @@ elif st.session_state.get('completed'):
         display_columns = ['company', 'source', 'industry', 'icp_score', 'fit_level',
                           'team_size', 'recommended_action', 'has_field_service']
         display_columns = [col for col in display_columns if col in df.columns]
-        st.dataframe(df[display_columns], use_container_width=True, hide_index=True)
+        st.dataframe(df[display_columns], width='stretch', hide_index=True)
 
         # Download button
         st.header("💾 Export")
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Full CSV",
-            data=csv,
-            file_name="validated_companies.csv",
-            mime="text/csv"
-        )
+        col1, col2 = st.columns(2)
+
+        with col1:
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Results CSV",
+                data=csv,
+                file_name="validated_companies.csv",
+                mime="text/csv"
+            )
+
+        with col2:
+            # Save logs and provide download
+            log_file, json_file = live_logger.save_to_file()
+            with open(log_file, 'r', encoding='utf-8') as f:
+                log_content = f.read()
+            st.download_button(
+                label="📥 Download Session Logs",
+                data=log_content,
+                file_name=os.path.basename(log_file),
+                mime="text/plain"
+            )
+
+        # Activity log viewer
+        st.header("📋 Session Activity Log")
+        with st.expander("View Full Log", expanded=False):
+            stats = live_logger.get_stats()
+            st.write(f"**Total Events:** {stats['total_events']} | "
+                    f"**API Calls:** {stats['api_calls']} | "
+                    f"**Errors:** {stats['errors']} | "
+                    f"**Duration:** {stats['duration']:.1f}s")
+            st.code(live_logger.get_formatted_logs(), language="log")
 
         # Execution time
         if 'start_time' in st.session_state:
