@@ -11,25 +11,27 @@ def main():
     """Main execution function"""
 
     # Check for input PDFs
-    speaker_pdf = 'data/input/fieldservicenextwest2026pre.pdf'
-    attendee_pdf = 'data/input/fieldservicenextwest2026attendees.pdf'
+    input_dir = 'data/input'
+    import glob
+    pdf_files = glob.glob(os.path.join(input_dir, '*.pdf'))
 
-    missing_files = []
-    if not os.path.exists(speaker_pdf):
-        missing_files.append(speaker_pdf)
-    if not os.path.exists(attendee_pdf):
-        missing_files.append(attendee_pdf)
-
-    if missing_files:
-        print("❌ Missing input PDF files:")
-        for file in missing_files:
-            print(f"  • {file}")
-        print("\n📌 Please place the conference PDFs in data/input/ directory")
-        print("   or update the file paths in main.py")
+    if not pdf_files:
+        print("❌ No PDF files found in data/input/")
+        print("\n📌 Please place conference PDFs in data/input/ directory")
+        print("   Supported: Any conference PDFs (agenda, speakers, attendees, etc.)")
+        print("\n   Examples:")
+        print("   - conference_agenda.pdf")
+        print("   - speaker_list.pdf")
+        print("   - attendee_roster.pdf")
         sys.exit(1)
 
+    print(f"✓ Found {len(pdf_files)} PDF file(s) to process:")
+    for pdf in pdf_files:
+        print(f"  • {os.path.basename(pdf)}")
+    print()
+
     # Run the pipeline
-    result = run_pipeline(speaker_pdf, attendee_pdf)
+    result = run_pipeline(input_dir)
 
     # Generate summary report
     print("\n" + "=" * 60)

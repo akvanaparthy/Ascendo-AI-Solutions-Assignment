@@ -1,11 +1,12 @@
 """Agent 1: PDF Data Extractor"""
 
 from crewai import Agent, Task
-from utils.pdf_parser import parse_speaker_pdf, parse_attendee_pdf, merge_company_lists
+from utils.pdf_parser import parse_generic_pdf, merge_all_companies
 from agents.shared_state import shared_state
 from utils.event_logger import event_logger
 import json
 import os
+import glob
 
 def create_extractor_agent() -> Agent:
     """Create the PDF Data Extractor agent"""
@@ -19,67 +20,94 @@ def create_extractor_agent() -> Agent:
         allow_delegation=False
     )
 
-def extract_companies_from_pdfs(speaker_pdf: str, attendee_pdf: str) -> dict:
+def extract_companies_from_pdfs(input_dir: str = 'data/input') -> dict:
     """
-    Extract companies from both PDFs and merge results.
-    This is the actual extraction logic that the agent will use.
+    Extract companies from ALL PDFs in input directory.
+    Flexible - works with any conference PDFs (agenda, attendee list, speaker list, etc.)
     """
     print("🔍 Agent 1: Starting PDF extraction...")
 
-    # Parse speaker PDF
-    print(f"  → Parsing speaker PDF: {speaker_pdf}")
-    speaker_companies = []
-    if os.path.exists(speaker_pdf):
-        speaker_companies = parse_speaker_pdf(speaker_pdf)
-        print(f"  ✓ Found {len(speaker_companies)} companies from speakers")
-    else:
-        print(f"  ⚠ Speaker PDF not found: {speaker_pdf}")
+    # Find all PDFs in input directory
+    pdf_files = glob.glob(os.path.join(input_dir, '*.pdf'))
 
-    # Parse attendee PDF
-    print(f"  → Parsing attendee PDF: {attendee_pdf}")
-    attendee_companies = []
-    if os.path.exists(attendee_pdf):
-        attendee_companies = parse_attendee_pdf(attendee_pdf)
-        print(f"  ✓ Found {len(attendee_companies)} companies from attendees")
-    else:
-        print(f"  ⚠ Attendee PDF not found: {attendee_pdf}")
+    if not pdf_files:
+        print(f"  ⚠ No PDF files found in {input_dir}")
+        return {
+            'companies': [],
+            'stats': {'total': 0, 'high_confidence': 0, 'flagged': 0}
+        }
 
-    # Merge company lists
-    print("  → Merging company lists...")
-    all_companies = merge_company_lists(speaker_companies, attendee_companies)
-    print(f"  ✓ Total unique companies: {len(all_companies)}")
+    print(f"  → Found {len(pdf_files)} PDF file(s):")
+    for pdf in pdf_files:
+        print(f"    • {os.path.basename(pdf)}")
+
+    # Parse each PDF
+    all_companies = []
+    for pdf_path in pdf_files:
+        print(f"\n  → Parsing: {os.path.basename(pdf_path)}")
+        try:
+            companies = parse_generic_pdf(pdf_path)
+            print(f"    ✓ Extracted {len(companies)} companies")
+
+            # Show role breakdown
+            speakers = [c for c in companies if 'speaker' in c.get('role', '').lower()]
+            attendees = [c for c in companies if 'attendee' in c.get('role', '').lower()]
+            print(f"      - Speakers: {len(speakers)}")
+            print(f"      - Attendees: {len(attendees)}")
+
+            all_companies.extend(companies)
+        except Exception as e:
+            print(f"    ⚠ Error parsing {os.path.basename(pdf_path)}: {e}")
+
+    # Merge duplicates across PDFs
+    print(f"\n  → Merging companies from all PDFs...")
+    merged_companies = merge_all_companies(all_companies)
+    print(f"  ✓ Total unique companies: {len(merged_companies)}")
 
     # Count quality flags
-    flagged = [c for c in all_companies if c.get('flags')]
-    high_confidence = [c for c in all_companies if c.get('confidence', 0) >= 0.8]
+    flagged = [c for c in merged_companies if c.get('flags')]
+    high_confidence = [c for c in merged_companies if c.get('confidence', 0) >= 0.8]
+
+    # Role breakdown
+    speakers = [c for c in merged_companies if 'speaker' in c.get('role', '').lower()]
+    attendees = [c for c in merged_companies if 'attendee' in c.get('role', '').lower()]
+    both = [c for c in merged_companies if 'speaker' in c.get('role', '').lower() and 'attendee' in c.get('role', '').lower()]
+
+    print(f"\n  📊 Breakdown:")
+    print(f"    • Speakers only: {len([c for c in speakers if c not in both])}")
+    print(f"    • Attendees only: {len([c for c in attendees if c not in both])}")
+    print(f"    • Both roles: {len(both)}")
 
     # Update shared state
     shared_state.update('extraction', {
         'status': 'complete',
-        'companies_found': len(all_companies),
+        'companies_found': len(merged_companies),
         'high_confidence': len(high_confidence),
         'flagged_for_review': len(flagged),
-        'data': all_companies
+        'data': merged_companies
     })
 
     # Log event
     event_logger.log('agent1', 'system', 'EXTRACTION_COMPLETE',
-                    f"Extracted {len(all_companies)} companies ({len(high_confidence)} high confidence, {len(flagged)} flagged)")
+                    f"Extracted {len(merged_companies)} companies ({len(high_confidence)} high confidence, {len(flagged)} flagged)")
 
     # Save to JSON
     output_file = 'data/output/raw_companies.json'
     os.makedirs('data/output', exist_ok=True)
     with open(output_file, 'w') as f:
-        json.dump({'companies': all_companies}, f, indent=2)
+        json.dump({'companies': merged_companies}, f, indent=2)
 
-    print(f"✅ Agent 1: Extraction complete → {output_file}")
+    print(f"\n✅ Agent 1: Extraction complete → {output_file}")
 
     return {
-        'companies': all_companies,
+        'companies': merged_companies,
         'stats': {
-            'total': len(all_companies),
+            'total': len(merged_companies),
             'high_confidence': len(high_confidence),
-            'flagged': len(flagged)
+            'flagged': len(flagged),
+            'speakers': len(speakers),
+            'attendees': len(attendees),
+            'both_roles': len(both)
         }
     }
 
@@ -87,24 +115,27 @@ def create_extraction_task(agent: Agent) -> Task:
     """Create the extraction task for CrewAI"""
     return Task(
         description="""
-        Extract all companies from the Field Service Conference PDFs.
+        Extract all companies from ANY conference PDFs in data/input/ directory.
 
-        Input files:
-        - data/input/fieldservicenextwest2026pre.pdf (speaker lineup)
-        - data/input/fieldservicenextwest2026attendees.pdf (attendee list)
+        The extractor is flexible and works with:
+        - Speaker/agenda PDFs (looks for Name → Job Title → Company patterns)
+        - Attendee list PDFs (looks for Company (Team of X) patterns)
+        - Mixed format PDFs
 
         Tasks:
-        1. Parse both PDF files
-        2. Extract company names, team sizes, contacts
-        3. Flag any ambiguous or uncertain extractions
-        4. Deduplicate companies appearing in both PDFs
-        5. Save results to data/output/raw_companies.json
+        1. Scan data/input/ for all PDF files
+        2. Parse each PDF using flexible patterns
+        3. Extract: company names, roles (speaker/attendee), team sizes, contacts
+        4. Merge duplicates across PDFs (same company in multiple PDFs = combine data)
+        5. Flag any ambiguous or uncertain extractions
+        6. Save results to data/output/raw_companies.json
 
         Output format: JSON with company data including:
         - company name
-        - source (speaker_lineup/attendee_list/both)
+        - source_pdf (which PDF(s) it came from)
+        - role (speaker/attendee/both)
         - team_size (if available)
-        - contact_name and contact_title (if available)
+        - contact_name and contact_title (if speaker with bio)
         - confidence score
         - flags (if any quality issues)
         """,

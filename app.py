@@ -22,28 +22,21 @@ with st.sidebar:
     st.header("⚙️ Configuration")
 
     st.markdown("### 📄 Input PDFs")
-    speaker_pdf = st.text_input(
-        "Speaker PDF Path",
-        value="data/input/fieldservicenextwest2026pre.pdf"
-    )
-    attendee_pdf = st.text_input(
-        "Attendee PDF Path",
-        value="data/input/fieldservicenextwest2026attendees.pdf"
+    input_dir = st.text_input(
+        "Input Directory",
+        value="data/input"
     )
 
-    # Check if files exist
-    speaker_exists = os.path.exists(speaker_pdf)
-    attendee_exists = os.path.exists(attendee_pdf)
+    # Check for PDFs in directory
+    import glob
+    pdf_files = glob.glob(os.path.join(input_dir, '*.pdf')) if os.path.exists(input_dir) else []
 
-    if speaker_exists:
-        st.success(f"✅ Speaker PDF found")
+    if pdf_files:
+        st.success(f"✅ Found {len(pdf_files)} PDF(s)")
+        for pdf in pdf_files:
+            st.text(f"  • {os.path.basename(pdf)}")
     else:
-        st.error(f"❌ Speaker PDF not found")
-
-    if attendee_exists:
-        st.success(f"✅ Attendee PDF found")
-    else:
-        st.error(f"❌ Attendee PDF not found")
+        st.error(f"❌ No PDFs found in {input_dir}")
 
     # Check for API key
     api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -56,10 +49,11 @@ with st.sidebar:
     st.markdown("---")
 
     # Run button
-    can_run = speaker_exists and attendee_exists and api_key
+    can_run = len(pdf_files) > 0 and api_key
     if st.button("🚀 Run Analysis", type="primary", disabled=not can_run):
         st.session_state.running = True
         st.session_state.start_time = time.time()
+        st.session_state.input_dir = input_dir
 
     if st.button("🔄 Reset"):
         st.session_state.running = False
@@ -99,7 +93,8 @@ if st.session_state.get('running'):
 
         try:
             # Run the actual pipeline
-            result = run_pipeline(speaker_pdf, attendee_pdf)
+            input_dir = st.session_state.get('input_dir', 'data/input')
+            result = run_pipeline(input_dir)
 
             extraction_status.success("✅ Agent 1: Extraction complete")
             progress_bar.progress(50)
@@ -243,29 +238,37 @@ else:
     st.info("""
     👋 **Welcome!** This tool uses AI agents to:
 
-    1. 🔍 **Extract** companies from conference PDFs
+    1. 🔍 **Extract** companies from ANY conference PDFs
     2. 🎯 **Validate** each against Ascendo.AI's ICP
     3. 📊 **Score** and rank by fit (0-100)
     4. 💡 **Generate** talking points for sales team
 
     **How it works:**
-    - **Agent 1 (Data Collector):** Extracts company names, team sizes, and contacts from PDFs
+    - **Agent 1 (Data Collector):** Scans ALL PDFs in input folder, extracts companies with roles (speaker/attendee)
     - **Agent 2 (ICP Analyst):** Validates each company using Claude API, scores fit, generates insights
     - **Collaboration:** Agents share data and enrich each other's work
 
-    Configure the PDF paths in the sidebar and click "Run Analysis" to start.
+    **Flexible PDF Support:**
+    - Works with ANY conference PDFs (agenda, speaker list, attendee roster, etc.)
+    - Automatically detects speakers vs attendees based on content
+    - Merges data from multiple PDFs intelligently
+
+    Place your conference PDFs in the input directory and click "Run Analysis" to start.
     """)
 
     # Instructions
     st.header("📌 Setup Instructions")
     st.markdown("""
     1. **Place PDFs** in `data/input/` directory
+       - ANY conference PDFs work (agenda, speakers, attendees, etc.)
+       - Multiple PDFs are automatically merged
     2. **Set API Key** in `.env` file: `ANTHROPIC_API_KEY=your_key`
     3. **Click Run** in the sidebar
 
-    **Expected Input:**
-    - `fieldservicenextwest2026pre.pdf` - Speaker lineup
-    - `fieldservicenextwest2026attendees.pdf` - Attendee list
+    **Supported PDF Formats:**
+    - Speaker/agenda PDFs (Name → Job Title → Company)
+    - Attendee lists (Company names with or without team sizes)
+    - Mixed format PDFs
     """)
 
     # Sample output preview

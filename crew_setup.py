@@ -4,15 +4,17 @@ from crewai import Crew, Process
 from agents.extractor_agent import create_extractor_agent, create_extraction_task, extract_companies_from_pdfs
 from agents.validator_agent import create_validator_agent, create_validation_task, validate_companies
 
-def run_pipeline(speaker_pdf: str = 'data/input/fieldservicenextwest2026pre.pdf',
-                attendee_pdf: str = 'data/input/fieldservicenextwest2026attendees.pdf') -> dict:
-    """Execute the full pipeline without CrewAI (direct function calls for simplicity)"""
+def run_pipeline(input_dir: str = 'data/input') -> dict:
+    """
+    Execute the full pipeline - processes ALL PDFs in input directory.
+    Flexible: works with any conference PDFs (agenda, speakers, attendees, etc.)
+    """
 
     print("🚀 Starting Conference ICP Validation Pipeline...")
     print("=" * 60)
 
-    # Step 1: Extract companies (Agent 1)
-    extraction_result = extract_companies_from_pdfs(speaker_pdf, attendee_pdf)
+    # Step 1: Extract companies from ALL PDFs (Agent 1)
+    extraction_result = extract_companies_from_pdfs(input_dir)
 
     print("\n" + "=" * 60)
 
@@ -28,8 +30,7 @@ def run_pipeline(speaker_pdf: str = 'data/input/fieldservicenextwest2026pre.pdf'
         'validation': validation_result
     }
 
-def run_with_crewai(speaker_pdf: str = 'data/input/fieldservicenextwest2026pre.pdf',
-                   attendee_pdf: str = 'data/input/fieldservicenextwest2026attendees.pdf') -> dict:
+def run_with_crewai(input_dir: str = 'data/input') -> dict:
     """
     Alternative: Execute the full pipeline with CrewAI orchestration.
     Note: CrewAI works better with agents that use its built-in tools.

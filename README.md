@@ -5,23 +5,65 @@ AI-powered two-agent system that extracts company data from conference PDFs and 
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
+# 1. Create virtual environment (recommended)
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Unix/Mac
+
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 2. Set up environment
+# 3. Set up environment
 cp .env.example .env
-# Add your ANTHROPIC_API_KEY to .env
+# Edit .env and add: ANTHROPIC_API_KEY=your_key_here
 
-# 3. Place PDFs in data/input/
+# 4. Place PDFs in data/input/
 # - fieldservicenextwest2026pre.pdf
 # - fieldservicenextwest2026attendees.pdf
 
-# 4. Run CLI
-python main.py
+# 5. Verify setup (optional but recommended)
+python test_setup.py
 
-# OR run Streamlit dashboard
-streamlit run app.py
+# 6. Run the application
+python main.py          # CLI version
+# OR
+streamlit run app.py    # Dashboard version
 ```
+
+## Troubleshooting
+
+### Windows-Specific Issues
+
+**Problem: pkg_resources not found**
+```bash
+pip install --upgrade setuptools
+```
+
+**Problem: CrewAI import fails**
+```bash
+# Make sure you're using CrewAI 0.76.0 (not 0.80.0 which requires uvloop)
+pip install crewai==0.76.0 crewai-tools
+```
+
+**Problem: Dependencies installing to user site-packages**
+```bash
+# Use venv's python directly
+venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### Common Errors
+
+**ModuleNotFoundError**
+- Ensure virtual environment is activated
+- Run: `pip install -r requirements.txt`
+
+**ANTHROPIC_API_KEY not found**
+- Create `.env` file from `.env.example`
+- Add your API key: `ANTHROPIC_API_KEY=sk-ant-...`
+
+**PDF files not found**
+- Place PDFs in `data/input/` directory
+- Check filenames match exactly
 
 ## Project Structure
 
