@@ -167,7 +167,7 @@ def get_available_models(force_refresh: bool = False) -> List[Dict[str, str]]:
     if not force_refresh:
         cached = get_cached_models()
         if cached:
-            print("Using cached models")
+            # Silently use cached models (don't spam console)
             return cached.get('models', get_fallback_models())
 
     # Try fetching from API

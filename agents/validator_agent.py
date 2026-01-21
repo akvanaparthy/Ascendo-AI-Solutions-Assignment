@@ -48,7 +48,7 @@ def research_company(company_name: str, client: Anthropic, model: str = None) ->
 
 Be factual and concise. If you don't know, say "unknown"."""
 
-    live_logger.log("API_CALL", "agent2", "RESEARCH_COMPANY",
+    live_logger.log("INFO", "agent2", "RESEARCH_COMPANY",
                    f"Researching {company_name}",
                    {"model": model, "max_tokens": 500})
 
@@ -58,11 +58,6 @@ Be factual and concise. If you don't know, say "unknown"."""
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}]
         )
-
-        live_logger.log("API_CALL", "agent2", "RESEARCH_SUCCESS",
-                       f"Got research data for {company_name}",
-                       {"input_tokens": response.usage.input_tokens,
-                        "output_tokens": response.usage.output_tokens})
 
         # Extract JSON from response
         response_text = response.content[0].text.strip()
@@ -74,10 +69,22 @@ Be factual and concise. If you don't know, say "unknown"."""
                 response_text = response_text[4:]
             response_text = response_text.strip()
 
-        return json.loads(response_text)
+        research_data = json.loads(response_text)
+
+        live_logger.log("API_CALL", "agent2", "RESEARCH_SUCCESS",
+                       f"Found: {research_data.get('industry', 'unknown')} | "
+                       f"Field service: {research_data.get('has_field_service', False)} | "
+                       f"Scale: {research_data.get('field_service_scale', 'unknown')}",
+                       {"input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                        "data": research_data})
+
+        return research_data
 
     except Exception as e:
         print(f"    ⚠ Research error for {company_name}: {str(e)}")
+        live_logger.log("ERROR", "agent2", "RESEARCH_ERROR",
+                       f"Failed to research {company_name}: {str(e)}")
         return {
             "industry": "unknown",
             "employee_count": "unknown",
@@ -94,7 +101,7 @@ def validate_icp(company_data: dict, research_data: dict, client: Anthropic, mod
         model = get_current_model()
 
     company_name = company_data['company']
-    live_logger.log("API_CALL", "agent2", "VALIDATE_ICP",
+    live_logger.log("INFO", "agent2", "VALIDATE_ICP",
                    f"Scoring {company_name} against ICP",
                    {"model": model})
     team_size = company_data.get('team_size', 1)
@@ -147,10 +154,22 @@ Provide JSON only:
                 response_text = response_text[4:]
             response_text = response_text.strip()
 
-        return json.loads(response_text)
+        validation_data = json.loads(response_text)
+
+        live_logger.log("API_CALL", "agent2", "ICP_SCORE_COMPLETE",
+                       f"Score: {validation_data.get('icp_score', 0)}/100 | "
+                       f"Fit: {validation_data.get('fit_level', 'Unknown')} | "
+                       f"Action: {validation_data.get('recommended_action', 'Unknown')}",
+                       {"input_tokens": response.usage.input_tokens,
+                        "output_tokens": response.usage.output_tokens,
+                        "reasoning": validation_data.get('reasoning', [])})
+
+        return validation_data
 
     except Exception as e:
         print(f"    ⚠ Validation error for {company_name}: {str(e)}")
+        live_logger.log("ERROR", "agent2", "VALIDATION_ERROR",
+                       f"Failed to validate {company_name}: {str(e)}")
         return {
             "icp_score": 0,
             "fit_level": "Low",

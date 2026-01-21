@@ -16,7 +16,7 @@ class LiveLogger:
         self.session_start = datetime.now()
         self.cancelled = False
 
-    def log(self, level: str, agent: str, action: str, details: str = "", metadata: dict = None):
+    def log(self, level: str, agent: str, action: str, details: str = "", metadata: dict = None, print_to_console: bool = False):
         """Log an event with timestamp and metadata
 
         Args:
@@ -25,6 +25,7 @@ class LiveLogger:
             action: What action is being performed
             details: Additional details
             metadata: Extra structured data
+            print_to_console: Whether to also print to console (default False for Streamlit)
         """
         with self.lock:
             entry = {
@@ -37,10 +38,11 @@ class LiveLogger:
             }
             self.logs.append(entry)
 
-            # Also print to console
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            prefix = f"[{timestamp}] [{level}] [{agent}]"
-            print(f"{prefix} {action}: {details}")
+            # Optionally print to console (disabled for Streamlit UI)
+            if print_to_console:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                prefix = f"[{timestamp}] [{level}] [{agent}]"
+                print(f"{prefix} {action}: {details}")
 
     def get_logs(self, agent: Optional[str] = None, level: Optional[str] = None):
         """Get logs, optionally filtered by agent or level"""

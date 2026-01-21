@@ -17,6 +17,10 @@ import os
 import time
 import json
 import threading
+import warnings
+
+# Suppress Streamlit thread warnings
+warnings.filterwarnings('ignore', message='.*ScriptRunContext.*')
 
 st.set_page_config(
     page_title="Conference ICP Validator",
@@ -194,8 +198,9 @@ if st.session_state.get('running'):
 
     # Live logs section
     st.header("📋 Live Activity Log")
-    log_container = st.empty()
     log_stats = st.empty()
+    # Use container with fixed height for scrolling
+    log_container = st.container(height=400)
 
     # Clear previous logs
     if 'pipeline_started' not in st.session_state:
@@ -224,22 +229,50 @@ if st.session_state.get('running'):
         st.session_state.pipeline_thread = thread
         st.session_state.pipeline_completed = False
 
-    # Update UI with live logs
-    extraction_status.info("🔄 Agent 1: Extracting companies...")
-    validation_status.info("🔄 Agent 2: Waiting...")
-    status_text.text("Processing...")
-
     # Show live logs
     logs = live_logger.get_formatted_logs()
-    if logs:
-        log_container.code(logs, language="log")
-        stats = live_logger.get_stats()
-        log_stats.caption(f"**Events:** {stats['total_events']} | **API Calls:** {stats['api_calls']} | **Duration:** {stats['duration']:.1f}s")
+    all_logs = live_logger.get_logs()
 
-    # Update progress based on logs
-    log_count = len(live_logger.get_logs())
-    if log_count > 5:
-        progress_bar.progress(min(50 + (log_count - 5) * 2, 95))
+    if logs:
+        with log_container:
+            st.code(logs, language="log")
+        stats = live_logger.get_stats()
+        log_stats.caption(f"**Events:** {stats['total_events']} | **Actual API Calls:** {stats['api_calls']} | **Duration:** {stats['duration']:.1f}s")
+
+    # Update status indicators dynamically based on logs
+    agent1_logs = [l for l in all_logs if l['agent'] == 'agent1']
+    agent2_logs = [l for l in all_logs if l['agent'] == 'agent2']
+
+    if agent1_logs:
+        last_agent1 = agent1_logs[-1]
+        if 'EXTRACTION_COMPLETE' in last_agent1['action'] or 'PDF_PARSED' in last_agent1['action']:
+            extraction_status.success("✅ Agent 1: Extraction complete")
+        else:
+            extraction_status.info(f"🔄 Agent 1: {last_agent1['action'].replace('_', ' ').title()}")
+
+    if agent2_logs:
+        last_agent2 = agent2_logs[-1]
+        if 'VALIDATING_COMPANY' in last_agent2['action']:
+            validation_status.info(f"🔄 Agent 2: {last_agent2['details'].split(':')[0]}")
+        elif 'START_VALIDATION' in last_agent2['action']:
+            validation_status.info("🔄 Agent 2: Starting validation...")
+        else:
+            validation_status.info(f"🔄 Agent 2: {last_agent2['action'].replace('_', ' ').title()}")
+    else:
+        validation_status.info("⏳ Agent 2: Waiting...")
+
+    # Update status text
+    if agent2_logs:
+        status_text.text("Phase 2/2: ICP Validation")
+        progress = min(50 + len(agent2_logs), 95)
+        progress_bar.progress(progress)
+    elif agent1_logs:
+        status_text.text("Phase 1/2: PDF Data Extraction")
+        progress = min(10 + len(agent1_logs) * 5, 50)
+        progress_bar.progress(progress)
+    else:
+        status_text.text("Starting...")
+        progress_bar.progress(5)
 
     # Check if pipeline completed
     if st.session_state.get('pipeline_completed'):
@@ -258,8 +291,8 @@ if st.session_state.get('running'):
         st.session_state.pop('pipeline_started', None)
         st.rerun()
     else:
-        # Auto-refresh every 1 second
-        time.sleep(1)
+        # Auto-refresh every 0.5 seconds for smoother updates
+        time.sleep(0.5)
         st.rerun()
 
 elif st.session_state.get('completed'):
