@@ -13,6 +13,7 @@ from config.model_config import (
     get_model_display_name,
     DEFAULT_MODEL
 )
+from config.research_config import get_research_mode, set_research_mode, COST_ESTIMATES
 import os
 import time
 import json
@@ -153,6 +154,30 @@ with st.sidebar:
         step=0.1,
         help="Skip companies below this confidence score"
     )
+
+    # Research mode selector
+    st.markdown("### 🌐 Research Mode")
+
+    current_research_mode = get_research_mode()
+
+    research_mode = st.radio(
+        "Company Research Method",
+        options=["training_data", "web_search"],
+        format_func=lambda x: "📚 Training Data (Fast, Cheaper)" if x == "training_data" else "🌐 Web Search (Accurate, Slower)",
+        index=0 if current_research_mode == "training_data" else 1,
+        help="Choose how to research companies"
+    )
+
+    # Show cost estimates
+    cost_info = COST_ESTIMATES[research_mode]
+    st.caption(f"**Cost:** {cost_info['per_company']} per company")
+    st.caption(f"{cost_info['description']}")
+
+    # Update research mode if changed
+    if research_mode != current_research_mode:
+        set_research_mode(research_mode)
+        mode_name = "Web Search" if research_mode == "web_search" else "Training Data"
+        st.success(f"✅ Research mode: {mode_name}")
 
     st.markdown("---")
 

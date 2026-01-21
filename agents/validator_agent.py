@@ -4,6 +4,7 @@ from crewai import Agent, Task
 from anthropic import Anthropic
 from config.icp_criteria import ICP_CRITERIA, SCORING_WEIGHTS
 from config.model_config import get_current_model, DEFAULT_MODEL
+from config.research_config import is_web_search_enabled, get_research_mode
 from agents.shared_state import shared_state
 from utils.event_logger import event_logger
 from utils.live_logger import live_logger
@@ -34,6 +35,9 @@ def research_company(company_name: str, client: Anthropic, model: str = None) ->
     if model is None:
         model = get_current_model()
 
+    use_web_search = is_web_search_enabled()
+    research_mode = get_research_mode()
+
     prompt = f"""Research {company_name} and provide ONLY a JSON response:
 
 {{
@@ -42,22 +46,34 @@ def research_company(company_name: str, client: Anthropic, model: str = None) ->
   "has_field_service": true/false,
   "field_service_scale": "small/medium/large/none",
   "business_model": "manufacturer/service_provider/distributor/other",
+  "tech_stack": ["list any known CRM/FSM tools like ServiceNow, Salesforce, SAP, etc."],
+  "support_operations": "global/regional/local",
   "description": "one sentence describing what they do",
   "confidence": "high/medium/low"
 }}
 
+Focus on: field service operations, technical support scale, existing tech stack (CRM/FSM), and global operations.
 Be factual and concise. If you don't know, say "unknown"."""
 
     live_logger.log("INFO", "agent2", "RESEARCH_COMPANY",
-                   f"Researching {company_name}",
-                   {"model": model, "max_tokens": 500})
+                   f"Researching {company_name} (mode: {research_mode})",
+                   {"model": model, "max_tokens": 500, "web_search": use_web_search})
 
     try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        # Create message with optional web search
+        message_params = {
+            "model": model,
+            "max_tokens": 500,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+
+        # Enable web search if configured
+        if use_web_search:
+            message_params["tools"] = [{
+                "type": "web_search_20250305"
+            }]
+
+        response = client.messages.create(**message_params)
 
         # Extract JSON from response
         response_text = response.content[0].text.strip()
@@ -107,34 +123,50 @@ def validate_icp(company_data: dict, research_data: dict, client: Anthropic, mod
     team_size = company_data.get('team_size', 1)
     contact_title = company_data.get('contact_title', '')
 
-    prompt = f"""Analyze if {company_name} fits Ascendo.AI's ICP.
+    prompt = f"""Analyze if {company_name} fits Ascendo.AI's Ideal Customer Profile (ICP).
 
-**Ascendo.AI Context:**
-- Builds AI solutions for field service & technical support teams
-- Target: B2B companies with 100+ field technicians
-- Focus industries: HVAC, medical devices, industrial equipment, manufacturing
+**Ascendo.AI Overview:**
+Ascendo.AI builds AI agents that embed into existing workflows for technical support and field service teams, delivering 75% faster resolutions, proactive outage prevention, and optimized operations.
 
-**Company Information:**
+**Target ICP:**
+- **Industries:** Telecom/optical networking, data platforms, high-tech/industrial manufacturing, medical devices, equipment-intensive sectors
+- **Company Size:** Mid-to-large B2B enterprises (500+ employees, ideally 2000+)
+- **Tech Stack:** Already using SAP Field Service, ServiceNow, Salesforce, Zendesk, or similar CRM/FSM tools
+- **Operations:** Global ticket volumes (1000+ monthly), multi-language support, compliance (SOC 2, ISO)
+- **Buyer Personas:** Head of Support, VP Customer Support, Director Service Operations, CCO, VP Field Service
+- **Pain Points:** Slow resolutions, tribal knowledge, inconsistent agent quality, high backlogs, poor first-time-fix rates
+- **Key Metrics:** SLA compliance, CSAT, first-time-fix rate, MTTR, backlog size, spares efficiency
+
+**Company Research Data:**
 {json.dumps(research_data, indent=2)}
 
-**Conference Context:**
-- Attending: Yes
-- Team Size: {team_size} people
-- Contact: {contact_title or 'Unknown'}
+**Conference Signals:**
+- Team Size: {team_size} attendees
+- Contact Title: {contact_title or 'Unknown'}
+
+**Scoring Guidelines:**
+- Primary target industries (telecom, data platforms, medical devices): +35 points
+- Enterprise scale (2000+ employees, global ops): +25 points
+- Existing FSM/CRM tech stack identified: +20 points
+- Global/multi-language operations: +15 points
+- Perfect buyer persona match (Head of Support, VP Service Ops, CCO): +10 points
+- Compliance/high volume indicators: +5 points each
+- Penalties: B2C focus (-20), No field service (-15)
 
 Provide JSON only:
 {{
   "icp_score": 0-100,
   "fit_level": "High/Medium/Low",
   "reasoning": [
-    "reason 1 why they fit/don't fit",
-    "reason 2",
-    "reason 3"
+    "Specific reason based on ICP criteria",
+    "Another specific reason",
+    "Third specific reason"
   ],
   "recommended_action": "Priority outreach/Booth approach/Research more/Skip",
   "talking_points": [
-    "relevant pain point or use case",
-    "another talking point"
+    "Pain point: e.g., 'Scaling global support with tribal knowledge'",
+    "Value prop: e.g., '75% faster resolutions via AI agents in ServiceNow'",
+    "Use case: e.g., 'Automated ticket triage for 1000+ monthly tickets'"
   ]
 }}"""
 

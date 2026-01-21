@@ -12,6 +12,7 @@ from crew_setup import run_pipeline
 from utils.event_logger import event_logger
 from agents.shared_state import shared_state
 from config.model_config import load_model_config, get_model_display_name
+from config.research_config import set_research_mode, get_research_mode
 import pandas as pd
 import argparse
 
@@ -23,7 +24,14 @@ def main():
                        help='Limit validation to first N companies (default: all)')
     parser.add_argument('--min-confidence', type=float, default=0.7,
                        help='Skip companies below this confidence (default: 0.7)')
+    parser.add_argument('--research-mode', type=str, choices=['training_data', 'web_search'],
+                       default=None,
+                       help='Research mode: training_data (fast, cheaper) or web_search (accurate, slower)')
     args = parser.parse_args()
+
+    # Set research mode if specified
+    if args.research_mode:
+        set_research_mode(args.research_mode)
 
     # Check for input PDFs
     input_dir = 'data/input'
@@ -49,6 +57,10 @@ def main():
     print(f"[OK] Using model: {get_model_display_name(current_model)}")
 
     # Show settings
+    research_mode = get_research_mode()
+    mode_display = "Web Search (live data)" if research_mode == "web_search" else "Training Data (fast)"
+    print(f"[OK] Research mode: {mode_display}")
+
     if args.max_companies:
         print(f"[OK] Limit: {args.max_companies} companies")
     print(f"[OK] Min confidence: {args.min_confidence}")
