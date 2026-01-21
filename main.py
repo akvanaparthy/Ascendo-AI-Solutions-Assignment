@@ -35,9 +35,10 @@ def main():
                        help='Limit validation to first N companies (default: all)')
     parser.add_argument('--min-confidence', type=float, default=0.7,
                        help='Skip companies below this confidence (default: 0.7)')
-    parser.add_argument('--research-mode', type=str, choices=['training_data', 'web_search'],
+    parser.add_argument('--research-mode', type=str,
+                       choices=['training_data', 'web_search_anthropic', 'web_search_brave'],
                        default=None,
-                       help='Research mode: training_data (fast, cheaper) or web_search (accurate, slower)')
+                       help='Research mode: training_data | web_search_anthropic | web_search_brave')
     args = parser.parse_args()
 
     # Set research mode if specified
@@ -69,8 +70,12 @@ def main():
 
     # Show settings
     research_mode = get_research_mode()
-    mode_display = "Web Search (live data)" if research_mode == "web_search" else "Training Data (fast)"
-    print(f"[OK] Research mode: {mode_display}")
+    mode_names = {
+        "training_data": "Training Data (fast)",
+        "web_search_anthropic": "Anthropic Web Search (live data)",
+        "web_search_brave": "Brave Search MCP (live data, free)"
+    }
+    print(f"[OK] Research mode: {mode_names.get(research_mode, research_mode)}")
 
     if args.max_companies:
         print(f"[OK] Limit: {args.max_companies} companies")

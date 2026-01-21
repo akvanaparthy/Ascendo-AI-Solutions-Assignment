@@ -34,6 +34,32 @@ python main.py          # CLI version
 streamlit run app.py    # Dashboard version (with model selector)
 ```
 
+## Research Modes
+
+Choose how to research companies (3 options):
+
+### 📚 Training Data (Default)
+- Claude's built-in knowledge (Jan 2025 cutoff)
+- **Cost:** $1.00 per 50 companies | **Speed:** Fast (6s/company)
+- Good for known companies
+
+### 🌐 Anthropic Web Search
+- Live web search via Anthropic API
+- **Cost:** $1.50-2.00 per 50 companies | **Speed:** Slow (20s/company)
+- No setup required
+
+### 🔍 Brave Search API (Recommended)
+- Live web search via Brave API
+- **Cost:** $1.00 per 50 companies (FREE searches!) | **Speed:** Medium (10s/company)
+- Requires free API key - see `config/BRAVE_SETUP_GUIDE.md`
+
+**Configure via:**
+- Streamlit UI: Sidebar → "🌐 Research Mode"
+- CLI: `python main.py --research-mode web_search_brave`
+- Config file: Edit `config/research_config.py`
+
+See `config/README.md` for details.
+
 ## Troubleshooting
 
 ### Windows-Specific Issues

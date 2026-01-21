@@ -4,7 +4,7 @@ from crewai import Agent, Task
 from anthropic import Anthropic
 from config.icp_criteria import ICP_CRITERIA, SCORING_WEIGHTS
 from config.model_config import get_current_model, DEFAULT_MODEL
-from config.research_config import is_web_search_enabled, get_research_mode
+from config.research_config import is_web_search_enabled, get_research_mode, get_web_search_type
 from agents.shared_state import shared_state
 from utils.event_logger import event_logger
 from utils.live_logger import live_logger
@@ -14,6 +14,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from tqdm import tqdm
 import time
+import requests
 
 load_dotenv()
 
@@ -30,13 +31,61 @@ def create_validator_agent() -> Agent:
         allow_delegation=False
     )
 
+def brave_search(query: str, count: int = 5) -> str:
+    """Call Brave Search API directly
+
+    Args:
+        query: Search query string
+        count: Number of results (default 5)
+
+    Returns:
+        Formatted search results as string
+    """
+    api_key = os.getenv('BRAVE_API_KEY')
+    if not api_key:
+        return "Error: BRAVE_API_KEY not set in .env file"
+
+    try:
+        headers = {"X-Subscription-Token": api_key}
+        url = "https://api.search.brave.com/res/v1/web/search"
+
+        params = {
+            "q": query,
+            "count": count,
+            "safesearch": "moderate"
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+        results = data.get("web", {}).get("results", [])
+
+        if not results:
+            return f"No search results found for: {query}"
+
+        # Format results for Claude
+        formatted = []
+        for i, result in enumerate(results[:count], 1):
+            formatted.append(f"{i}. {result.get('title', 'No title')}")
+            formatted.append(f"   URL: {result.get('url', 'No URL')}")
+            formatted.append(f"   {result.get('description', 'No description')}")
+            formatted.append("")
+
+        return "\n".join(formatted)
+
+    except requests.exceptions.RequestException as e:
+        return f"Brave Search API error: {str(e)}"
+    except Exception as e:
+        return f"Error processing search results: {str(e)}"
+
 def research_company(company_name: str, client: Anthropic, model: str = None) -> dict:
     """Use Claude to research a company"""
     if model is None:
         model = get_current_model()
 
-    use_web_search = is_web_search_enabled()
     research_mode = get_research_mode()
+    web_search_type = get_web_search_type()
 
     prompt = f"""Research {company_name} and provide ONLY a JSON response:
 
@@ -57,7 +106,7 @@ Be factual and concise. If you don't know, say "unknown"."""
 
     live_logger.log("INFO", "agent2", "RESEARCH_COMPANY",
                    f"Researching {company_name} (mode: {research_mode})",
-                   {"model": model, "max_tokens": 500, "web_search": use_web_search})
+                   {"model": model, "max_tokens": 500})
 
     try:
         # Check cancellation before API call
@@ -72,20 +121,56 @@ Be factual and concise. If you don't know, say "unknown"."""
                 "confidence": "low"
             }
 
-        # Create message with optional web search
-        message_params = {
-            "model": model,
-            "max_tokens": 500,
-            "messages": [{"role": "user", "content": prompt}]
-        }
+        # Route based on research mode
+        if web_search_type == "brave":
+            # Use Brave Search API directly
+            search_results = brave_search(f"{company_name} company information field service CRM", count=5)
 
-        # Enable web search if configured
-        if use_web_search:
-            message_params["tools"] = [{
-                "type": "web_search_20250305"
-            }]
+            prompt_with_search = f"""Based on these web search results about {company_name}:
 
-        response = client.messages.create(**message_params)
+{search_results}
+
+Provide ONLY a JSON response:
+
+{{
+  "industry": "specific industry vertical",
+  "employee_count": estimated_number_or_range,
+  "has_field_service": true/false,
+  "field_service_scale": "small/medium/large/none",
+  "business_model": "manufacturer/service_provider/distributor/other",
+  "tech_stack": ["list any known CRM/FSM tools like ServiceNow, Salesforce, SAP, etc."],
+  "support_operations": "global/regional/local",
+  "description": "one sentence describing what they do",
+  "confidence": "high/medium/low"
+}}
+
+Focus on: field service operations, technical support scale, existing tech stack (CRM/FSM), and global operations."""
+
+            response = client.messages.create(
+                model=model,
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt_with_search}]
+            )
+
+        elif web_search_type == "anthropic":
+            # Use Anthropic's built-in web search
+            response = client.messages.create(
+                model=model,
+                max_tokens=1000,
+                messages=[{"role": "user", "content": prompt}],
+                tools=[{
+                    "type": "web_search_20250305",
+                    "name": "web_search"
+                }]
+            )
+
+        else:
+            # Use training data (no web search)
+            response = client.messages.create(
+                model=model,
+                max_tokens=500,
+                messages=[{"role": "user", "content": prompt}]
+            )
 
         # Check cancellation immediately after API call
         if live_logger.is_cancelled():
@@ -99,8 +184,15 @@ Be factual and concise. If you don't know, say "unknown"."""
                 "confidence": "low"
             }
 
-        # Extract JSON from response
-        response_text = response.content[0].text.strip()
+        # Extract JSON from response - handle both text and tool_use blocks
+        response_text = None
+        for block in response.content:
+            if hasattr(block, 'text'):
+                response_text = block.text.strip()
+                break
+
+        if not response_text:
+            raise ValueError("No text response found in API response")
 
         # Remove markdown code blocks if present
         if response_text.startswith('```'):

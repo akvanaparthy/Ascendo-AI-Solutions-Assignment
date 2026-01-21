@@ -160,24 +160,38 @@ with st.sidebar:
 
     current_research_mode = get_research_mode()
 
+    # Define display names
+    mode_display = {
+        "training_data": "📚 Training Data",
+        "web_search_anthropic": "🌐 Anthropic Web Search",
+        "web_search_brave": "🔍 Brave Search API"
+    }
+
     research_mode = st.radio(
         "Company Research Method",
-        options=["training_data", "web_search"],
-        format_func=lambda x: "📚 Training Data (Fast, Cheaper)" if x == "training_data" else "🌐 Web Search (Accurate, Slower)",
-        index=0 if current_research_mode == "training_data" else 1,
+        options=["training_data", "web_search_anthropic", "web_search_brave"],
+        format_func=lambda x: mode_display[x],
+        index=["training_data", "web_search_anthropic", "web_search_brave"].index(current_research_mode),
         help="Choose how to research companies"
     )
 
     # Show cost estimates
     cost_info = COST_ESTIMATES[research_mode]
-    st.caption(f"**Cost:** {cost_info['per_company']} per company")
+    st.caption(f"**Cost (50 companies):** {cost_info['total_50']}")
     st.caption(f"{cost_info['description']}")
+
+    # Show setup requirements for Brave API
+    if research_mode == "web_search_brave":
+        brave_key = os.getenv('BRAVE_API_KEY')
+        if brave_key:
+            st.success("✅ Brave API key configured")
+        else:
+            st.warning("⚠️ BRAVE_API_KEY not set. Get free key at: https://api.search.brave.com/")
 
     # Update research mode if changed
     if research_mode != current_research_mode:
         set_research_mode(research_mode)
-        mode_name = "Web Search" if research_mode == "web_search" else "Training Data"
-        st.success(f"✅ Research mode: {mode_name}")
+        st.success(f"✅ Research mode: {mode_display[research_mode]}")
 
     st.markdown("---")
 
