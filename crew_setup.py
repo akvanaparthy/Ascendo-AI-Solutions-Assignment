@@ -24,6 +24,15 @@ def run_pipeline(input_dir: str = 'data/input', model: str = None,
     # Step 1: Extract companies from ALL PDFs (Agent 1)
     extraction_result = extract_companies_from_pdfs(input_dir)
 
+    # Check if cancelled during extraction
+    if live_logger.is_cancelled():
+        print("\n⚠️ Pipeline cancelled after extraction phase")
+        log_file, json_file = live_logger.save_to_file()
+        return {
+            'extraction': extraction_result,
+            'validation': {'error': 'Pipeline cancelled by user'}
+        }
+
     print("\n" + "=" * 60)
 
     # Step 2: Validate companies (Agent 2)

@@ -2,6 +2,7 @@
 
 import sys
 import os
+import signal
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -13,8 +14,18 @@ from utils.event_logger import event_logger
 from agents.shared_state import shared_state
 from config.model_config import load_model_config, get_model_display_name
 from config.research_config import set_research_mode, get_research_mode
+from utils.live_logger import live_logger
 import pandas as pd
 import argparse
+
+# Signal handler for Ctrl+C
+def signal_handler(sig, frame):
+    print("\n\n⚠️ Interrupt received (Ctrl+C). Stopping gracefully...")
+    live_logger.cancel()
+    print("⏳ Waiting for current operation to complete...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 def main():
     """Main execution function"""

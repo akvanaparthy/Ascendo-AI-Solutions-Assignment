@@ -53,6 +53,13 @@ def extract_companies_from_pdfs(input_dir: str = "data/input") -> dict:
     # Parse each PDF into *rows* (rows may include multiple speaker contacts per company)
     all_rows = []
     for pdf_path in pdf_files:
+        # Check for cancellation
+        if live_logger.is_cancelled():
+            print("\n⚠️ Extraction cancelled by user")
+            live_logger.log("INFO", "agent1", "EXTRACTION_CANCELLED",
+                          f"Stopped after processing {len(all_rows)} rows")
+            return {"companies": [], "stats": {"total": 0, "high_confidence": 0, "flagged": 0}}
+
         print(f"\n  → Parsing: {os.path.basename(pdf_path)}")
         live_logger.log("INFO", "agent1", "PARSING_PDF", f"Processing {os.path.basename(pdf_path)}")
 

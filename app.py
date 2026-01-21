@@ -194,14 +194,23 @@ with st.sidebar:
     if st.button("🔄 Reset"):
         st.session_state.running = False
         st.session_state.completed = False
-        live_logger.cancel()
+        if 'pipeline_thread' in st.session_state:
+            del st.session_state.pipeline_thread
+        if 'pipeline_started' in st.session_state:
+            del st.session_state.pipeline_started
+        live_logger.clear()  # Clear logs and reset cancelled flag
         st.rerun()
 
     if st.session_state.get('running'):
         if st.button("⛔ Stop", type="secondary"):
             live_logger.cancel()
             st.session_state.running = False
-            st.warning("Stopping pipeline...")
+            # Clean up thread state
+            if 'pipeline_thread' in st.session_state:
+                del st.session_state.pipeline_thread
+            if 'pipeline_started' in st.session_state:
+                del st.session_state.pipeline_started
+            st.warning("⚠️ Stopping pipeline... (may take a few seconds to complete current API call)")
 
 # Main content
 if st.session_state.get('running'):

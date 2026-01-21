@@ -60,6 +60,18 @@ Be factual and concise. If you don't know, say "unknown"."""
                    {"model": model, "max_tokens": 500, "web_search": use_web_search})
 
     try:
+        # Check cancellation before API call
+        if live_logger.is_cancelled():
+            return {
+                "industry": "unknown",
+                "employee_count": "unknown",
+                "has_field_service": False,
+                "field_service_scale": "unknown",
+                "business_model": "unknown",
+                "description": "Cancelled",
+                "confidence": "low"
+            }
+
         # Create message with optional web search
         message_params = {
             "model": model,
@@ -74,6 +86,18 @@ Be factual and concise. If you don't know, say "unknown"."""
             }]
 
         response = client.messages.create(**message_params)
+
+        # Check cancellation immediately after API call
+        if live_logger.is_cancelled():
+            return {
+                "industry": "unknown",
+                "employee_count": "unknown",
+                "has_field_service": False,
+                "field_service_scale": "unknown",
+                "business_model": "unknown",
+                "description": "Cancelled",
+                "confidence": "low"
+            }
 
         # Extract JSON from response
         response_text = response.content[0].text.strip()
@@ -171,11 +195,31 @@ Provide JSON only:
 }}"""
 
     try:
+        # Check cancellation before API call
+        if live_logger.is_cancelled():
+            return {
+                "icp_score": 0,
+                "fit_level": "Low",
+                "reasoning": ["Cancelled by user"],
+                "recommended_action": "Skip",
+                "talking_points": ["Processing cancelled"]
+            }
+
         response = client.messages.create(
             model=model,
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}]
         )
+
+        # Check cancellation immediately after API call
+        if live_logger.is_cancelled():
+            return {
+                "icp_score": 0,
+                "fit_level": "Low",
+                "reasoning": ["Cancelled by user"],
+                "recommended_action": "Skip",
+                "talking_points": ["Processing cancelled"]
+            }
 
         response_text = response.content[0].text.strip()
 
@@ -284,14 +328,20 @@ def validate_companies(input_file: str = 'data/output/raw_companies.json', model
         # Research company
         research_data = research_company(company_name, client, model)
         if live_logger.is_cancelled():
+            print("\n⚠️ Validation cancelled by user")
+            live_logger.log("INFO", "agent2", "VALIDATION_CANCELLED",
+                          f"Stopped at {idx}/{len(companies)} companies (after research)")
             break
-        time.sleep(0.5)  # Rate limiting
+        time.sleep(0.3)  # Rate limiting (reduced for faster cancellation)
 
         # Validate against ICP
         validation_data = validate_icp(company, research_data, client, model)
         if live_logger.is_cancelled():
+            print("\n⚠️ Validation cancelled by user")
+            live_logger.log("INFO", "agent2", "VALIDATION_CANCELLED",
+                          f"Stopped at {idx}/{len(companies)} companies (after validation)")
             break
-        time.sleep(0.5)  # Rate limiting
+        time.sleep(0.3)  # Rate limiting (reduced for faster cancellation)
 
         live_logger.log("INFO", "agent2", "COMPANY_SCORED",
                        f"{company_name} scored {validation_data.get('icp_score', 0)}/100",
