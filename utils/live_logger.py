@@ -14,6 +14,7 @@ class LiveLogger:
         self.logs = []
         self.lock = Lock()
         self.session_start = datetime.now()
+        self.cancelled = False
 
     def log(self, level: str, agent: str, action: str, details: str = "", metadata: dict = None):
         """Log an event with timestamp and metadata
@@ -114,6 +115,18 @@ class LiveLogger:
         with self.lock:
             self.logs.clear()
             self.session_start = datetime.now()
+            self.cancelled = False
+
+    def cancel(self):
+        """Signal cancellation of current operation"""
+        with self.lock:
+            self.cancelled = True
+            self.log("INFO", "system", "CANCELLED", "User requested cancellation")
+
+    def is_cancelled(self):
+        """Check if operation has been cancelled"""
+        with self.lock:
+            return self.cancelled
 
     def get_stats(self):
         """Get statistics about the session"""

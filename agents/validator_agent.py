@@ -219,16 +219,27 @@ def validate_companies(input_file: str = 'data/output/raw_companies.json', model
     resolution_count = 0
 
     for idx, company in enumerate(tqdm(companies, desc="  Validating companies"), 1):
+        # Check for cancellation
+        if live_logger.is_cancelled():
+            print("\n⚠️ Validation cancelled by user")
+            live_logger.log("INFO", "agent2", "VALIDATION_CANCELLED",
+                          f"Stopped at {idx-1}/{len(companies)} companies")
+            break
+
         company_name = company['company']
         live_logger.log("INFO", "agent2", "VALIDATING_COMPANY",
                        f"[{idx}/{len(companies)}] Processing {company_name}")
 
         # Research company
         research_data = research_company(company_name, client, model)
+        if live_logger.is_cancelled():
+            break
         time.sleep(0.5)  # Rate limiting
 
         # Validate against ICP
         validation_data = validate_icp(company, research_data, client, model)
+        if live_logger.is_cancelled():
+            break
         time.sleep(0.5)  # Rate limiting
 
         live_logger.log("INFO", "agent2", "COMPANY_SCORED",

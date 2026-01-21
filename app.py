@@ -16,6 +16,7 @@ from config.model_config import (
 import os
 import time
 import json
+import threading
 
 st.set_page_config(
     page_title="Conference ICP Validator",
@@ -164,7 +165,14 @@ with st.sidebar:
     if st.button("🔄 Reset"):
         st.session_state.running = False
         st.session_state.completed = False
+        live_logger.cancel()
         st.rerun()
+
+    if st.session_state.get('running'):
+        if st.button("⛔ Stop", type="secondary"):
+            live_logger.cancel()
+            st.session_state.running = False
+            st.warning("Stopping pipeline...")
 
 # Main content
 if st.session_state.get('running'):
@@ -187,54 +195,71 @@ if st.session_state.get('running'):
     # Live logs section
     st.header("📋 Live Activity Log")
     log_container = st.empty()
+    log_stats = st.empty()
 
-    # Run pipeline with progress updates
-    with st.spinner("Agents working..."):
-        # Clear previous logs
+    # Clear previous logs
+    if 'pipeline_started' not in st.session_state:
         live_logger.clear()
+        st.session_state.pipeline_started = True
 
-        # Start extraction
-        extraction_status.info("🔄 Agent 1: Extracting companies...")
-        status_text.text("Phase 1/2: PDF Data Extraction")
-        progress_bar.progress(10)
+    # Run pipeline in background thread if not started
+    if 'pipeline_thread' not in st.session_state:
+        def run_pipeline_thread():
+            try:
+                input_dir = st.session_state.get('input_dir', 'data/input')
+                selected_model = st.session_state.get('selected_model', load_model_config())
+                max_companies = st.session_state.get('max_companies', 50)
+                min_confidence = st.session_state.get('min_confidence', 0.7)
+                result = run_pipeline(input_dir, selected_model, min_confidence, max_companies)
+                st.session_state.pipeline_result = result
+                st.session_state.pipeline_error = None
+            except Exception as e:
+                st.session_state.pipeline_error = str(e)
+                st.session_state.pipeline_result = None
+            finally:
+                st.session_state.pipeline_completed = True
 
-        log_container.code("Starting pipeline...")
+        thread = threading.Thread(target=run_pipeline_thread, daemon=True)
+        thread.start()
+        st.session_state.pipeline_thread = thread
+        st.session_state.pipeline_completed = False
 
-        try:
-            # Run the actual pipeline
-            input_dir = st.session_state.get('input_dir', 'data/input')
-            selected_model = st.session_state.get('selected_model', load_model_config())
-            max_companies = st.session_state.get('max_companies', 50)
-            min_confidence = st.session_state.get('min_confidence', 0.7)
-            result = run_pipeline(input_dir, selected_model, min_confidence, max_companies)
+    # Update UI with live logs
+    extraction_status.info("🔄 Agent 1: Extracting companies...")
+    validation_status.info("🔄 Agent 2: Waiting...")
+    status_text.text("Processing...")
 
-            # Update logs display
+    # Show live logs
+    logs = live_logger.get_formatted_logs()
+    if logs:
+        log_container.code(logs, language="log")
+        stats = live_logger.get_stats()
+        log_stats.caption(f"**Events:** {stats['total_events']} | **API Calls:** {stats['api_calls']} | **Duration:** {stats['duration']:.1f}s")
+
+    # Update progress based on logs
+    log_count = len(live_logger.get_logs())
+    if log_count > 5:
+        progress_bar.progress(min(50 + (log_count - 5) * 2, 95))
+
+    # Check if pipeline completed
+    if st.session_state.get('pipeline_completed'):
+        if st.session_state.get('pipeline_error'):
+            st.error(f"❌ Error: {st.session_state.pipeline_error}")
+        else:
             extraction_status.success("✅ Agent 1: Extraction complete")
-            progress_bar.progress(50)
-            log_container.code(live_logger.get_formatted_logs())
-
-            validation_status.info("🔄 Agent 2: Validating ICP fit...")
-            status_text.text("Phase 2/2: ICP Validation")
-            progress_bar.progress(75)
-
-            # Validation complete
             validation_status.success("✅ Agent 2: Validation complete")
-            progress_bar.progress(100)
             completion_status.success("✅ Pipeline Complete!")
+            progress_bar.progress(100)
             status_text.text("Analysis complete!")
 
-            # Final log update
-            log_container.code(live_logger.get_formatted_logs())
-
-            st.session_state.completed = True
-            st.session_state.running = False
-
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-            st.session_state.running = False
-
-    # Force rerun to show results
-    if st.session_state.get('completed'):
+        st.session_state.completed = True
+        st.session_state.running = False
+        st.session_state.pop('pipeline_thread', None)
+        st.session_state.pop('pipeline_started', None)
+        st.rerun()
+    else:
+        # Auto-refresh every 1 second
+        time.sleep(1)
         st.rerun()
 
 elif st.session_state.get('completed'):
