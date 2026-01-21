@@ -1,0 +1,8 @@
+crewai==0.76.0
+crewai-tools
+anthropic
+pymupdf
+pandas
+streamlit
+python-dotenv
+tqdm

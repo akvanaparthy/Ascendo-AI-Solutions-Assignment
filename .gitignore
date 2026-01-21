@@ -1,0 +1,107 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+.ENV
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# API Keys and Secrets
+*.pem
+*.key
+*.crt
+secrets.json
+
+# Data Files
+data/input/*
+data/output/*
+
+# Project Files
+status.md
+Project_Spec.md
+*.xlsx
+*.xls
+
+# Logs
+logs/
+*.log
+.pytest_cache/
+
+# CrewAI
+crew_outputs/
+.crew_state.json
+
+# Streamlit
+.streamlit/
+.streamlit/config.toml
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Node (if using any JS tools)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Temp files
+*.tmp
+*~
+.#*
+
+2026_Agenda.pdf
+2026_Attendee_List.pdf
+CLAUDE.md
+
+.claude/
