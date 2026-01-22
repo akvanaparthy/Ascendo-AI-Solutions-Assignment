@@ -2,7 +2,7 @@ import sys
 import re
 from crewai import Agent, Task
 from anthropic import Anthropic
-from config.icp_criteria import ICP_CRITERIA, SCORING_WEIGHTS
+from config.icp_criteria import ICP_CRITERIA, SCORING_WEIGHTS, calculate_icp_score
 from config.model_config import get_current_model
 from config.research_config import get_research_mode, get_web_search_type
 from agents.shared_state import shared_state
@@ -134,41 +134,43 @@ def validate_icp(company_data: dict, research_data: dict, client: Anthropic, mod
     company_name = company_data['company']
     live_logger.log("INFO", "agent2", "VALIDATE_ICP", f"Scoring {company_name}")
 
-    prompt = f"""Analyze if {company_name} fits Ascendo.AI's ICP.
+    score_result = calculate_icp_score(research_data, company_data)
+    icp_score = score_result["icp_score"]
+    fit_level = score_result["fit_level"]
+    recommended_action = score_result["recommended_action"]
+    breakdown = score_result["score_breakdown"]
 
-**Ascendo.AI:** AI agents for technical support/field service - 75% faster resolutions.
+    prompt = f"""Based on this company analysis, provide reasoning and talking points.
 
-**Target ICP:**
-- Industries: Telecom, data platforms, manufacturing, medical devices
-- Size: 500+ employees, ideally 2000+
-- Tech: ServiceNow, Salesforce, SAP Field Service, Zendesk
-- Operations: Global, 1000+ monthly tickets
+**Company:** {company_name}
+**ICP Score:** {icp_score}/100 ({fit_level} fit)
+**Score Breakdown:**
+{json.dumps(breakdown, indent=2)}
 
 **Research Data:**
 {json.dumps(research_data, indent=2)}
 
-**Conference Signals:**
-- Team: {company_data.get('team_size', 1)} attendees
+**Conference Context:**
+- Team size: {company_data.get('team_size', 1)} attendees
 - Contact: {company_data.get('contact_title', 'Unknown')}
 
 Provide JSON only:
 {{
-  "icp_score": 0-100,
-  "fit_level": "High/Medium/Low",
-  "reasoning": ["reason1", "reason2", "reason3"],
-  "recommended_action": "Priority outreach/Booth approach/Research more/Skip",
-  "talking_points": ["pain point", "value prop", "use case"]
+  "reasoning": ["reason1 why they fit/don't fit", "reason2", "reason3"],
+  "talking_points": ["specific pain point for this company", "value prop", "use case"]
 }}"""
 
     try:
         if live_logger.is_cancelled():
-            return {"icp_score": 0, "fit_level": "Low", "recommended_action": "Skip"}
+            return {"icp_score": icp_score, "fit_level": fit_level, "recommended_action": recommended_action,
+                    "reasoning": [], "talking_points": []}
 
-        response = client.messages.create(model=model, max_tokens=800,
+        response = client.messages.create(model=model, max_tokens=600,
                                          messages=[{"role": "user", "content": prompt}])
 
         if live_logger.is_cancelled():
-            return {"icp_score": 0, "fit_level": "Low", "recommended_action": "Skip"}
+            return {"icp_score": icp_score, "fit_level": fit_level, "recommended_action": recommended_action,
+                    "reasoning": [], "talking_points": []}
 
         response_text = response.content[0].text.strip()
 
@@ -178,17 +180,31 @@ Provide JSON only:
                 response_text = response_text[4:]
             response_text = response_text.strip()
 
-        data = json.loads(response_text)
+        narrative = json.loads(response_text)
+
         live_logger.log("API_CALL", "agent2", "ICP_SCORE_COMPLETE",
-                       f"Score: {data.get('icp_score', 0)}/100 | Fit: {data.get('fit_level', 'Unknown')}",
+                       f"Score: {icp_score}/100 | Fit: {fit_level}",
                        {"tokens": response.usage.input_tokens + response.usage.output_tokens})
-        return data
+
+        return {
+            "icp_score": icp_score,
+            "fit_level": fit_level,
+            "recommended_action": recommended_action,
+            "reasoning": narrative.get("reasoning", []),
+            "talking_points": narrative.get("talking_points", [])
+        }
 
     except Exception as e:
-        print(f"    ⚠ Validation error for {company_name}: {e}")
+        print(f"    ⚠ Narrative generation error for {company_name}: {e}")
         sys.stdout.flush()
-        live_logger.log("ERROR", "agent2", "VALIDATION_ERROR", str(e))
-        return {"icp_score": 0, "fit_level": "Low", "recommended_action": "Research more"}
+        live_logger.log("ERROR", "agent2", "NARRATIVE_ERROR", str(e))
+        return {
+            "icp_score": icp_score,
+            "fit_level": fit_level,
+            "recommended_action": recommended_action,
+            "reasoning": list(breakdown.values())[:3],
+            "talking_points": []
+        }
 
 def validate_companies(input_file: str = 'data/output/raw_companies.json', model: str = None,
                        min_confidence: float = 0.7, max_companies: int = None) -> dict:
