@@ -19,12 +19,14 @@ from config.research_config import get_research_mode, set_research_mode, COST_ES
 
 warnings.filterwarnings('ignore', message='.*ScriptRunContext.*')
 
-st.set_page_config(page_title="Conference ICP Validator", layout="wide")
-st.title("Field Service Conference ICP Validator")
-st.markdown("**AI-Powered Lead Qualification for Ascendo.AI**")
+st.set_page_config(page_title="ICP Validator", layout="wide")
+st.title("ICP Validator")
+st.markdown("**AI ICP Validatorfor Ascendo.AI**")
 
 if 'max_companies' not in st.session_state:
     st.session_state.max_companies = 50
+if 'process_all' not in st.session_state:
+    st.session_state.process_all = False
 if 'min_confidence' not in st.session_state:
     st.session_state.min_confidence = 0.7
 if 'running' not in st.session_state:
@@ -85,12 +87,19 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Validation Settings")
 
-    max_companies = st.number_input(
-        "Max Companies", min_value=1, max_value=10000,
-        value=st.session_state.max_companies, step=1,
-        key="max_companies_widget"
-    )
-    st.session_state.max_companies = max_companies
+    process_all = st.checkbox("Process all companies", value=st.session_state.process_all)
+    st.session_state.process_all = process_all
+
+    if not process_all:
+        max_companies = st.number_input(
+            "Max Companies", min_value=1, max_value=10000,
+            value=st.session_state.max_companies if st.session_state.max_companies else 50, step=1,
+            key="max_companies_widget"
+        )
+        st.session_state.max_companies = max_companies
+    else:
+        max_companies = None
+        st.session_state.max_companies = None
 
     min_confidence = st.slider(
         "Min Confidence", min_value=0.0, max_value=1.0,
@@ -183,7 +192,9 @@ with st.sidebar:
 
 if st.session_state.running:
     st.header("Pipeline Progress")
-    st.caption(f"Settings: {st.session_state.get('run_max_companies', 50)} companies | {get_research_mode()} mode")
+    max_comp = st.session_state.get('run_max_companies', 50)
+    comp_text = "all companies" if max_comp is None else f"{max_comp} companies"
+    st.caption(f"Settings: {comp_text} | {get_research_mode()} mode")
 
     progress_bar = st.progress(0)
     status_text = st.empty()
