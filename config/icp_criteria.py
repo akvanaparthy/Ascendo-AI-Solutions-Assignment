@@ -1,6 +1,6 @@
 """ICP (Ideal Customer Profile) Criteria for Ascendo.AI
 
-Based on comprehensive market research, Ascendo.AI targets mid-to-large B2B enterprises
+Ascendo.AI targets mid-to-large B2B enterprises
 in industries with complex, mission-critical products that create heavy technical support
 and field service demand.
 """
