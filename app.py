@@ -7,6 +7,7 @@ import json
 import threading
 import warnings
 import glob
+from datetime import datetime
 
 from crew_setup import run_pipeline
 from agents.shared_state import shared_state
@@ -19,9 +20,59 @@ from config.research_config import get_research_mode, set_research_mode, COST_ES
 
 warnings.filterwarnings('ignore', message='.*ScriptRunContext.*')
 
+SAVED_ANALYSES_DIR = "data/saved_analyses"
+
+def get_saved_analyses():
+    """Get list of saved analysis files"""
+    if not os.path.exists(SAVED_ANALYSES_DIR):
+        return []
+    files = glob.glob(os.path.join(SAVED_ANALYSES_DIR, '*.json'))
+    analyses = []
+    for f in files:
+        try:
+            with open(f, 'r', encoding='utf-8') as fp:
+                meta = json.load(fp)
+                meta['file_path'] = f
+                analyses.append(meta)
+        except:
+            pass
+    return sorted(analyses, key=lambda x: x.get('timestamp', ''), reverse=True)
+
+def save_analysis(df, config):
+    """Save analysis results with metadata"""
+    os.makedirs(SAVED_ANALYSES_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    csv_path = os.path.join(SAVED_ANALYSES_DIR, f"analysis_{timestamp}.csv")
+    df.to_csv(csv_path, index=False)
+
+    meta = {
+        'timestamp': timestamp,
+        'display_name': datetime.now().strftime("%Y-%m-%d %H:%M"),
+        'companies': len(df),
+        'high_fit': len(df[df['icp_score'] >= 70]),
+        'model': config.get('model', 'unknown'),
+        'research_mode': config.get('research_mode', 'unknown'),
+        'scoring_mode': config.get('scoring_mode', 'unknown'),
+        'csv_path': csv_path
+    }
+
+    meta_path = os.path.join(SAVED_ANALYSES_DIR, f"analysis_{timestamp}.json")
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, indent=2)
+
+    return meta_path
+
+def load_analysis(meta):
+    """Load analysis from saved file"""
+    csv_path = meta.get('csv_path')
+    if csv_path and os.path.exists(csv_path):
+        return pd.read_csv(csv_path)
+    return None
+
 st.set_page_config(page_title="ICP Validator", layout="wide")
 st.title("ICP Validator")
-st.markdown("**AI ICP Validatorfor Ascendo.AI**")
+st.markdown("**AI ICP Validator for Ascendo.AI**")
 
 if 'max_companies' not in st.session_state:
     st.session_state.max_companies = 50
@@ -35,10 +86,45 @@ if 'completed' not in st.session_state:
     st.session_state.completed = False
 if 'thread_started' not in st.session_state:
     st.session_state.thread_started = False
+if 'loaded_analysis' not in st.session_state:
+    st.session_state.loaded_analysis = None
 
 with st.sidebar:
     st.header("Configuration")
 
+    st.markdown("### Load Previous Analysis")
+    saved_analyses = get_saved_analyses()
+
+    if saved_analyses:
+        analysis_options = ["-- New Analysis --"] + [
+            f"{a['display_name']} ({a['companies']} co, {a['high_fit']} high-fit)"
+            for a in saved_analyses
+        ]
+        selected_analysis = st.selectbox(
+            "Previous Runs",
+            options=range(len(analysis_options)),
+            format_func=lambda x: analysis_options[x],
+            key="analysis_selector"
+        )
+
+        if selected_analysis > 0:
+            if st.button("Load Selected"):
+                meta = saved_analyses[selected_analysis - 1]
+                df = load_analysis(meta)
+                if df is not None:
+                    st.session_state.loaded_analysis = {
+                        'df': df,
+                        'meta': meta
+                    }
+                    st.session_state.completed = True
+                    st.session_state.running = False
+                    st.rerun()
+                else:
+                    st.error("Failed to load analysis")
+    else:
+        st.caption("No saved analyses yet")
+
+    st.markdown("---")
     st.markdown("### Input PDFs")
     input_dir = st.text_input("Input Directory", value="data/input")
     pdf_files = glob.glob(os.path.join(input_dir, '*.pdf')) if os.path.exists(input_dir) else []
@@ -135,8 +221,8 @@ with st.sidebar:
     current_scoring_mode = get_scoring_mode()
 
     scoring_display = {
-        "ai_scored": "AI Sub-Scores (new)",
-        "ai_direct": "AI Direct (original)"
+        "ai_scored": "AI Sub-Scores (Programmatic)",
+        "ai_direct": "AI Direct (Overall Judgement)"
     }
     scoring_help = {
         "ai_scored": "Claude scores each metric (industry 0-35, size 0-25, etc.) and we sum them",
@@ -163,11 +249,14 @@ with st.sidebar:
         st.session_state.running = True
         st.session_state.completed = False
         st.session_state.thread_started = False
+        st.session_state.loaded_analysis = None
         st.session_state.start_time = time.time()
         st.session_state.run_input_dir = input_dir
         st.session_state.run_model = selected_model
         st.session_state.run_max_companies = max_companies
         st.session_state.run_min_confidence = min_confidence
+        st.session_state.run_research_mode = research_mode
+        st.session_state.run_scoring_mode = scoring_mode
 
         print(f"\n[APP] Run Analysis clicked")
         print(f"[APP] max_companies={max_companies}")
@@ -181,6 +270,7 @@ with st.sidebar:
         st.session_state.running = False
         st.session_state.completed = False
         st.session_state.thread_started = False
+        st.session_state.loaded_analysis = None
         st.rerun()
 
     if st.session_state.running:
@@ -314,20 +404,28 @@ if st.session_state.running:
 elif st.session_state.completed:
     st.header("Results Summary")
 
-    if os.path.exists('data/output/validated_companies.csv'):
+    df = None
+    loaded_meta = None
+
+    if st.session_state.loaded_analysis:
+        df = st.session_state.loaded_analysis['df']
+        loaded_meta = st.session_state.loaded_analysis['meta']
+        st.info(f"Loaded: {loaded_meta['display_name']} | Model: {loaded_meta.get('model', 'N/A')} | Mode: {loaded_meta.get('research_mode', 'N/A')}")
+    elif os.path.exists('data/output/validated_companies.csv'):
         df = pd.read_csv('data/output/validated_companies.csv')
 
+    if df is not None:
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total", len(df))
         with col2:
-            high = len(df[df['icp_score'] >= 75])
+            high = len(df[df['icp_score'] >= 70])
             st.metric("High Fit", high, f"{high/len(df)*100:.0f}%")
         with col3:
-            med = len(df[(df['icp_score'] >= 50) & (df['icp_score'] < 75)])
+            med = len(df[(df['icp_score'] >= 45) & (df['icp_score'] < 70)])
             st.metric("Medium", med)
         with col4:
-            low = len(df[df['icp_score'] < 50])
+            low = len(df[df['icp_score'] < 45])
             st.metric("Low", low)
 
         st.header("Distribution")
@@ -339,30 +437,61 @@ elif st.session_state.completed:
             st.bar_chart(bins.value_counts().sort_index())
 
         st.header("Top 10 Priority")
-        cols = ['company', 'industry', 'icp_score', 'fit_level', 'recommended_action']
-        cols = [c for c in cols if c in df.columns]
-        st.dataframe(df.nlargest(10, 'icp_score')[cols], hide_index=True)
+        top10_cols = ['company', 'industry', 'employee_count', 'icp_score', 'fit_level', 'recommended_action']
+        top10_cols = [c for c in top10_cols if c in df.columns]
+        st.dataframe(df.nlargest(10, 'icp_score')[top10_cols], hide_index=True)
 
         if 'industry' in df.columns:
             st.header("Industries")
             st.bar_chart(df['industry'].value_counts().head(10))
 
         st.header("Full Results")
-        display_cols = ['company', 'source', 'industry', 'icp_score', 'fit_level', 'recommended_action']
+
+        view_mode = st.radio("View", ["Summary", "Detailed", "All Columns"], horizontal=True)
+
+        if view_mode == "Summary":
+            display_cols = ['company', 'industry', 'icp_score', 'fit_level', 'recommended_action']
+        elif view_mode == "Detailed":
+            display_cols = ['company', 'contact_name', 'contact_title', 'industry', 'employee_count',
+                          'has_field_service', 'field_service_scale', 'icp_score', 'fit_level',
+                          'recommended_action', 'confidence']
+        else:
+            display_cols = df.columns.tolist()
+
         display_cols = [c for c in display_cols if c in df.columns]
-        st.dataframe(df[display_cols], hide_index=True)
+        st.dataframe(df[display_cols], hide_index=True, use_container_width=True)
+
+        with st.expander("Reasoning & Talking Points"):
+            for idx, row in df.nlargest(5, 'icp_score').iterrows():
+                st.markdown(f"**{row['company']}** (Score: {row['icp_score']})")
+                if 'reasoning_text' in row:
+                    st.markdown(f"*Reasoning:* {row['reasoning_text'][:500]}...")
+                if 'talking_points_text' in row:
+                    st.markdown(f"*Talking Points:* {row['talking_points_text'][:500]}...")
+                st.markdown("---")
 
         st.header("Export")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.download_button("Download CSV", df.to_csv(index=False), "validated_companies.csv", "text/csv")
         with col2:
+            if not st.session_state.loaded_analysis:
+                if st.button("Save Analysis"):
+                    config = {
+                        'model': st.session_state.get('run_model', 'unknown'),
+                        'research_mode': st.session_state.get('run_research_mode', 'unknown'),
+                        'scoring_mode': st.session_state.get('run_scoring_mode', 'unknown')
+                    }
+                    save_analysis(df, config)
+                    st.success("Analysis saved!")
+                    st.rerun()
+        with col3:
             log_file, _ = live_logger.save_to_file()
             if os.path.exists(log_file):
                 with open(log_file, 'r', encoding='utf-8') as f:
                     st.download_button("Download Logs", f.read(), os.path.basename(log_file), "text/plain")
 
-        if 'start_time' in st.session_state:
+        if 'start_time' in st.session_state and not st.session_state.loaded_analysis:
             st.info(f"Time: {time.time() - st.session_state.start_time:.1f}s")
     else:
         st.error("Results not found")
