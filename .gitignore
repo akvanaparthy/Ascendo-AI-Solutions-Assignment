@@ -59,7 +59,7 @@ secrets.json
 # Data Files
 data/input/*
 data/output/*
-
+data/saved_analyses/*
 # Project Files
 status.md
 Project_Spec.md
