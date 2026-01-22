@@ -14,6 +14,7 @@ class LiveLogger:
         self.completed = False
         self.error = None
         self.result = None
+        self.pipeline_running = False
 
     def log(self, level: str, agent: str, action: str, details: str = "", metadata: dict = None):
         with self.lock:
@@ -81,10 +82,23 @@ class LiveLogger:
             self.completed = False
             self.error = None
             self.result = None
+            self.pipeline_running = False
+
+    def start_pipeline(self) -> bool:
+        with self.lock:
+            if self.pipeline_running:
+                return False
+            self.pipeline_running = True
+            return True
+
+    def is_pipeline_running(self) -> bool:
+        with self.lock:
+            return self.pipeline_running
 
     def cancel(self):
         with self.lock:
             self.cancelled = True
+            self.pipeline_running = False
             self.logs.append({
                 "timestamp": datetime.now().isoformat(),
                 "level": "INFO",
@@ -101,6 +115,7 @@ class LiveLogger:
     def set_completed(self, result=None, error=None):
         with self.lock:
             self.completed = True
+            self.pipeline_running = False
             self.result = result
             self.error = error
             if error:

@@ -199,7 +199,7 @@ if st.session_state.running:
     log_stats = st.empty()
     log_container = st.container(height=400)
 
-    if not st.session_state.thread_started:
+    if not st.session_state.thread_started and live_logger.start_pipeline():
         st.session_state.thread_started = True
 
         run_input_dir = st.session_state.get('run_input_dir', 'data/input')
@@ -231,6 +231,8 @@ if st.session_state.running:
             daemon=True
         )
         thread.start()
+    elif live_logger.is_pipeline_running():
+        pass
 
     logs = live_logger.get_formatted_logs()
     all_logs = live_logger.get_logs()
