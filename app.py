@@ -19,8 +19,8 @@ from config.research_config import get_research_mode, set_research_mode, COST_ES
 
 warnings.filterwarnings('ignore', message='.*ScriptRunContext.*')
 
-st.set_page_config(page_title="Conference ICP Validator", page_icon="🎯", layout="wide")
-st.title("🎯 Field Service Conference ICP Validator")
+st.set_page_config(page_title="Conference ICP Validator", layout="wide")
+st.title("Field Service Conference ICP Validator")
 st.markdown("**AI-Powered Lead Qualification for Ascendo.AI**")
 
 if 'max_companies' not in st.session_state:
@@ -35,31 +35,25 @@ if 'thread_started' not in st.session_state:
     st.session_state.thread_started = False
 
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.header("Configuration")
 
-    st.markdown("### 📄 Input PDFs")
+    st.markdown("### Input PDFs")
     input_dir = st.text_input("Input Directory", value="data/input")
     pdf_files = glob.glob(os.path.join(input_dir, '*.pdf')) if os.path.exists(input_dir) else []
 
-    if pdf_files:
-        st.success(f"✅ Found {len(pdf_files)} PDF(s)")
-        for pdf in pdf_files:
-            st.text(f"  • {os.path.basename(pdf)}")
-    else:
-        st.error(f"❌ No PDFs found in {input_dir}")
+    if not pdf_files:
+        st.error(f"No PDFs found in {input_dir}")
 
     api_key = os.getenv('ANTHROPIC_API_KEY')
-    if api_key:
-        st.success("✅ API Key configured")
-    else:
-        st.error("❌ ANTHROPIC_API_KEY not set")
+    if not api_key:
+        st.error("No API Key configured")
 
     st.markdown("---")
-    st.markdown("### 🤖 Model Selection")
+    st.markdown("### Model Selection")
 
     col1, col2 = st.columns([3, 1])
     with col2:
-        if st.button("🔄", help="Refresh models"):
+        if st.button("Refresh", help="Refresh models"):
             st.session_state.force_refresh = True
 
     available_models = get_available_models(force_refresh=st.session_state.get('force_refresh', False))
@@ -73,8 +67,6 @@ with st.sidebar:
 
     for idx, model in enumerate(available_models):
         display_text = model['display_name']
-        if model.get('recommended'):
-            display_text += " ⭐"
         model_options[display_text] = model['id']
         if model['id'] == current_model:
             default_index = idx
@@ -94,10 +86,9 @@ with st.sidebar:
 
     if selected_model != current_model:
         save_model_config(selected_model)
-        st.success(f"✅ Model: {get_model_display_name(selected_model)}")
 
     st.markdown("---")
-    st.markdown("### ⚙️ Validation Settings")
+    st.markdown("### Validation Settings")
 
     max_companies = st.number_input(
         "Max Companies", min_value=1, max_value=10000,
@@ -113,13 +104,13 @@ with st.sidebar:
     )
     st.session_state.min_confidence = min_confidence
 
-    st.markdown("### 🌐 Research Mode")
+    st.markdown("### Research Mode")
     current_research_mode = get_research_mode()
 
     mode_display = {
-        "training_data": "📚 Training Data",
-        "web_search_anthropic": "🌐 Anthropic Web Search",
-        "web_search_brave": "🔍 Brave Search API"
+        "training_data": "Training Data",
+        "web_search_anthropic": "Anthropic Web Search",
+        "web_search_brave": "Brave Search API"
     }
 
     research_mode = st.radio(
@@ -133,20 +124,18 @@ with st.sidebar:
     st.caption(f"**Cost (50):** {cost_info['total_50']}")
 
     if research_mode == "web_search_brave":
-        if os.getenv('BRAVE_API_KEY'):
-            st.success("✅ Brave API configured")
-        else:
-            st.warning("⚠️ BRAVE_API_KEY not set")
+        if not os.getenv('BRAVE_API_KEY'):
+            st.warning("BRAVE_API_KEY not set")
 
     if research_mode != current_research_mode:
         set_research_mode(research_mode)
 
-    st.markdown("### 📊 Scoring Mode")
+    st.markdown("### Scoring Mode")
     current_scoring_mode = get_scoring_mode()
 
     scoring_display = {
-        "ai_scored": "🎯 AI Sub-Scores (new)",
-        "ai_direct": "💯 AI Direct (original)"
+        "ai_scored": "AI Sub-Scores (new)",
+        "ai_direct": "AI Direct (original)"
     }
     scoring_help = {
         "ai_scored": "Claude scores each metric (industry 0-35, size 0-25, etc.) and we sum them",
@@ -168,7 +157,7 @@ with st.sidebar:
 
     can_run = len(pdf_files) > 0 and api_key and not st.session_state.running
 
-    if st.button("🚀 Run Analysis", type="primary", disabled=not can_run):
+    if st.button("Run Analysis", type="primary", disabled=not can_run):
         live_logger.clear()
         st.session_state.running = True
         st.session_state.completed = False
@@ -186,7 +175,7 @@ with st.sidebar:
         sys.stdout.flush()
         st.rerun()
 
-    if st.button("🔄 Reset"):
+    if st.button("Reset"):
         live_logger.clear()
         st.session_state.running = False
         st.session_state.completed = False
@@ -194,14 +183,14 @@ with st.sidebar:
         st.rerun()
 
     if st.session_state.running:
-        if st.button("⛔ Stop", type="secondary"):
+        if st.button("Stop", type="secondary"):
             live_logger.cancel()
             st.session_state.running = False
             st.session_state.completed = True
-            st.warning("⚠️ Stopping...")
+            st.warning("Stopping...")
 
 if st.session_state.running:
-    st.header("📊 Pipeline Progress")
+    st.header("Pipeline Progress")
     st.caption(f"Settings: {st.session_state.get('run_max_companies', 50)} companies | {get_research_mode()} mode")
 
     progress_bar = st.progress(0)
@@ -210,15 +199,15 @@ if st.session_state.running:
     col1, col2, col3 = st.columns(3)
     with col1:
         extraction_status = st.empty()
-        extraction_status.info("⏳ Agent 1: Waiting...")
+        extraction_status.info("Agent 1: Waiting...")
     with col2:
         validation_status = st.empty()
-        validation_status.info("⏳ Agent 2: Waiting...")
+        validation_status.info("Agent 2: Waiting...")
     with col3:
         completion_status = st.empty()
-        completion_status.info("⏳ Pipeline: Running...")
+        completion_status.info("Pipeline: Running...")
 
-    st.header("📋 Live Activity Log")
+    st.header("Live Activity Log")
     log_stats = st.empty()
     log_container = st.container(height=400)
 
@@ -275,18 +264,18 @@ if st.session_state.running:
     if agent1_logs:
         last = agent1_logs[-1]
         if 'COMPLETE' in last['action'] or 'Complete' in last['action']:
-            extraction_status.success("✅ Agent 1: Complete")
+            extraction_status.success("Agent 1: Complete")
         else:
-            extraction_status.info(f"🔄 Agent 1: {last['action']}")
+            extraction_status.info(f"Agent 1: {last['action']}")
 
     if agent2_logs:
         last = agent2_logs[-1]
         if 'VALIDATING' in last['action']:
-            validation_status.info(f"🔄 {last['details'].split(':')[0] if ':' in last['details'] else last['action']}")
+            validation_status.info(f"{last['details'].split(':')[0] if ':' in last['details'] else last['action']}")
         elif 'COMPLETE' in last['action'] or 'Complete' in last['action']:
-            validation_status.success("✅ Agent 2: Complete")
+            validation_status.success("Agent 2: Complete")
         else:
-            validation_status.info(f"🔄 Agent 2: {last['action']}")
+            validation_status.info(f"Agent 2: {last['action']}")
 
     if agent2_logs:
         status_text.text("Phase 2/2: ICP Validation")
@@ -301,12 +290,12 @@ if st.session_state.running:
     if live_logger.is_completed():
         error = live_logger.get_error()
         if error:
-            st.error(f"❌ Error: {error}")
-            completion_status.error("❌ Pipeline: Error")
+            st.error(f"Error: {error}")
+            completion_status.error("Pipeline: Error")
         else:
-            extraction_status.success("✅ Agent 1: Complete")
-            validation_status.success("✅ Agent 2: Complete")
-            completion_status.success("✅ Pipeline: Done!")
+            extraction_status.success("Agent 1: Complete")
+            validation_status.success("Agent 2: Complete")
+            completion_status.success("Pipeline: Done!")
             progress_bar.progress(100)
             status_text.text("Analysis complete!")
 
@@ -320,7 +309,7 @@ if st.session_state.running:
         st.rerun()
 
 elif st.session_state.completed:
-    st.header("📈 Results Summary")
+    st.header("Results Summary")
 
     if os.path.exists('data/output/validated_companies.csv'):
         df = pd.read_csv('data/output/validated_companies.csv')
@@ -338,7 +327,7 @@ elif st.session_state.completed:
             low = len(df[df['icp_score'] < 50])
             st.metric("Low", low)
 
-        st.header("📊 Distribution")
+        st.header("Distribution")
         col1, col2 = st.columns(2)
         with col1:
             st.bar_chart(df['fit_level'].value_counts())
@@ -346,42 +335,42 @@ elif st.session_state.completed:
             bins = pd.cut(df['icp_score'], bins=[0, 25, 50, 75, 100], labels=['0-25', '26-50', '51-75', '76-100'])
             st.bar_chart(bins.value_counts().sort_index())
 
-        st.header("🎯 Top 10 Priority")
+        st.header("Top 10 Priority")
         cols = ['company', 'industry', 'icp_score', 'fit_level', 'recommended_action']
         cols = [c for c in cols if c in df.columns]
         st.dataframe(df.nlargest(10, 'icp_score')[cols], hide_index=True)
 
         if 'industry' in df.columns:
-            st.header("🏭 Industries")
+            st.header("Industries")
             st.bar_chart(df['industry'].value_counts().head(10))
 
-        st.header("📋 Full Results")
+        st.header("Full Results")
         display_cols = ['company', 'source', 'industry', 'icp_score', 'fit_level', 'recommended_action']
         display_cols = [c for c in display_cols if c in df.columns]
         st.dataframe(df[display_cols], hide_index=True)
 
-        st.header("💾 Export")
+        st.header("Export")
         col1, col2 = st.columns(2)
         with col1:
-            st.download_button("📥 Download CSV", df.to_csv(index=False), "validated_companies.csv", "text/csv")
+            st.download_button("Download CSV", df.to_csv(index=False), "validated_companies.csv", "text/csv")
         with col2:
             log_file, _ = live_logger.save_to_file()
             if os.path.exists(log_file):
                 with open(log_file, 'r', encoding='utf-8') as f:
-                    st.download_button("📥 Download Logs", f.read(), os.path.basename(log_file), "text/plain")
+                    st.download_button("Download Logs", f.read(), os.path.basename(log_file), "text/plain")
 
         if 'start_time' in st.session_state:
-            st.info(f"⏱️ Time: {time.time() - st.session_state.start_time:.1f}s")
+            st.info(f"Time: {time.time() - st.session_state.start_time:.1f}s")
     else:
-        st.error("❌ Results not found")
+        st.error("Results not found")
 
 else:
     st.info("""
-    👋 **Welcome!** This tool uses AI agents to:
-    1. 🔍 **Extract** companies from conference PDFs
-    2. 🎯 **Validate** against Ascendo.AI's ICP
-    3. 📊 **Score** and rank (0-100)
-    4. 💡 **Generate** talking points
+    **Welcome!** This tool uses AI agents to:
+    1. **Extract** companies from conference PDFs
+    2. **Validate** against Ascendo.AI's ICP
+    3. **Score** and rank (0-100)
+    4. **Generate** talking points
 
     Place PDFs in `data/input/` and click **Run Analysis**.
     """)
