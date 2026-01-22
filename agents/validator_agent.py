@@ -2,9 +2,9 @@ import sys
 import re
 from crewai import Agent, Task
 from anthropic import Anthropic
-from config.icp_criteria import ICP_CRITERIA, SCORING_WEIGHTS, calculate_icp_score
+from config.icp_criteria import ICP_CRITERIA, SCORING_WEIGHTS
 from config.model_config import get_current_model
-from config.research_config import get_research_mode, get_web_search_type
+from config.research_config import get_research_mode, get_web_search_type, get_scoring_mode
 from agents.shared_state import shared_state
 from utils.event_logger import event_logger
 from utils.live_logger import live_logger
@@ -132,21 +132,22 @@ def validate_icp(company_data: dict, research_data: dict, client: Anthropic, mod
         model = get_current_model()
 
     company_name = company_data['company']
-    live_logger.log("INFO", "agent2", "VALIDATE_ICP", f"Scoring {company_name}")
+    scoring_mode = get_scoring_mode()
+    live_logger.log("INFO", "agent2", "VALIDATE_ICP", f"Scoring {company_name} (mode: {scoring_mode})")
 
-    score_result = calculate_icp_score(research_data, company_data)
-    icp_score = score_result["icp_score"]
-    fit_level = score_result["fit_level"]
-    recommended_action = score_result["recommended_action"]
-    breakdown = score_result["score_breakdown"]
+    icp_context = """**Ascendo.AI ICP:**
+- Target: Mid-to-large B2B enterprises with complex products creating heavy technical support and field service demand
+- Industries: Telecom, optical networking, data platforms, medical devices, industrial manufacturing, HVAC, building automation, energy, field service
+- Company size: 500+ employees preferred, 2000+ ideal
+- Tech stack: Companies using FSM/CRM platforms (ServiceNow, Salesforce, SAP, Zendesk, Dynamics 365, ServiceMax)
+- Operations: Global/multi-region support operations with high ticket volumes
+- Buyers: VP/Head of Support/Service, Director of Service Operations, CCO, VP Field Service
+- Key signals: Field service operations, global support, compliance requirements"""
 
-    prompt = f"""Based on this company analysis, provide reasoning and talking points.
+    if scoring_mode == "ai_scored":
+        prompt = f"""Score this company against Ascendo.AI's Ideal Customer Profile (ICP).
 
 **Company:** {company_name}
-**ICP Score:** {icp_score}/100 ({fit_level} fit)
-**Score Breakdown:**
-{json.dumps(breakdown, indent=2)}
-
 **Research Data:**
 {json.dumps(research_data, indent=2)}
 
@@ -154,22 +155,62 @@ def validate_icp(company_data: dict, research_data: dict, client: Anthropic, mod
 - Team size: {company_data.get('team_size', 1)} attendees
 - Contact: {company_data.get('contact_title', 'Unknown')}
 
+{icp_context}
+
+**Score each metric (use your judgment within the range):**
+- industry (0-35): How well does their industry align with target industries?
+- size (0-25): Company scale - do they have the size/complexity needing our solution?
+- tech_stack (0-20): Do they use FSM/CRM platforms we integrate with?
+- operations (0-15): Global/regional operations with high support volume?
+- persona (0-10): Is the contact a decision-maker for service/support?
+- adjustment (-15 to +5): Bonuses (team 5+) or penalties (no field service ops)
+
 Provide JSON only:
 {{
-  "reasoning": ["reason1 why they fit/don't fit", "reason2", "reason3"],
-  "talking_points": ["specific pain point for this company", "value prop", "use case"]
+  "scores": {{
+    "industry": <0-35>,
+    "size": <0-25>,
+    "tech_stack": <0-20>,
+    "operations": <0-15>,
+    "persona": <0-10>,
+    "adjustment": <-15 to +5>
+  }},
+  "reasoning": ["reason1", "reason2", "reason3"],
+  "talking_points": ["pain point", "value prop", "use case"]
+}}"""
+    else:  # ai_direct
+        prompt = f"""Score this company against Ascendo.AI's Ideal Customer Profile (ICP).
+
+**Company:** {company_name}
+**Research Data:**
+{json.dumps(research_data, indent=2)}
+
+**Conference Context:**
+- Team size: {company_data.get('team_size', 1)} attendees
+- Contact: {company_data.get('contact_title', 'Unknown')}
+
+{icp_context}
+
+Score 0-100 based on overall fit. Consider industry match, company scale, field service operations, tech stack, and buyer persona.
+
+Provide JSON only:
+{{
+  "icp_score": <0-100>,
+  "fit_level": "High/Medium/Low",
+  "reasoning": ["reason1", "reason2", "reason3"],
+  "talking_points": ["pain point", "value prop", "use case"]
 }}"""
 
     try:
         if live_logger.is_cancelled():
-            return {"icp_score": icp_score, "fit_level": fit_level, "recommended_action": recommended_action,
+            return {"icp_score": 0, "fit_level": "Low", "recommended_action": "Skip",
                     "reasoning": [], "talking_points": []}
 
-        response = client.messages.create(model=model, max_tokens=600,
+        response = client.messages.create(model=model, max_tokens=800,
                                          messages=[{"role": "user", "content": prompt}])
 
         if live_logger.is_cancelled():
-            return {"icp_score": icp_score, "fit_level": fit_level, "recommended_action": recommended_action,
+            return {"icp_score": 0, "fit_level": "Low", "recommended_action": "Skip",
                     "reasoning": [], "talking_points": []}
 
         response_text = response.content[0].text.strip()
@@ -180,29 +221,62 @@ Provide JSON only:
                 response_text = response_text[4:]
             response_text = response_text.strip()
 
-        narrative = json.loads(response_text)
+        result = json.loads(response_text)
+
+        if scoring_mode == "ai_scored":
+            scores = result.get("scores", {})
+            icp_score = (
+                scores.get("industry", 0) +
+                scores.get("size", 0) +
+                scores.get("tech_stack", 0) +
+                scores.get("operations", 0) +
+                scores.get("persona", 0) +
+                scores.get("adjustment", 0)
+            )
+            icp_score = max(0, min(100, icp_score))
+
+            if icp_score >= 70:
+                fit_level = "High"
+            elif icp_score >= 45:
+                fit_level = "Medium"
+            else:
+                fit_level = "Low"
+        else:  # ai_direct
+            icp_score = max(0, min(100, result.get("icp_score", 0)))
+            fit_level = result.get("fit_level", "Low")
+
+        # Determine action
+        if fit_level == "High":
+            recommended_action = "Priority outreach"
+        elif fit_level == "Medium":
+            recommended_action = "Booth approach"
+        else:
+            recommended_action = "Research more" if icp_score >= 25 else "Skip"
 
         live_logger.log("API_CALL", "agent2", "ICP_SCORE_COMPLETE",
                        f"Score: {icp_score}/100 | Fit: {fit_level}",
                        {"tokens": response.usage.input_tokens + response.usage.output_tokens})
 
-        return {
+        response_data = {
             "icp_score": icp_score,
             "fit_level": fit_level,
             "recommended_action": recommended_action,
-            "reasoning": narrative.get("reasoning", []),
-            "talking_points": narrative.get("talking_points", [])
+            "reasoning": result.get("reasoning", []),
+            "talking_points": result.get("talking_points", [])
         }
+        if scoring_mode == "ai_scored":
+            response_data["score_breakdown"] = scores
+        return response_data
 
     except Exception as e:
-        print(f"    ⚠ Narrative generation error for {company_name}: {e}")
+        print(f"    ⚠ ICP scoring error for {company_name}: {e}")
         sys.stdout.flush()
-        live_logger.log("ERROR", "agent2", "NARRATIVE_ERROR", str(e))
+        live_logger.log("ERROR", "agent2", "SCORING_ERROR", str(e))
         return {
-            "icp_score": icp_score,
-            "fit_level": fit_level,
-            "recommended_action": recommended_action,
-            "reasoning": list(breakdown.values())[:3],
+            "icp_score": 0,
+            "fit_level": "Low",
+            "recommended_action": "Skip",
+            "reasoning": [str(e)],
             "talking_points": []
         }
 

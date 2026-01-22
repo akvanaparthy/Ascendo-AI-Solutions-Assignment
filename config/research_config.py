@@ -1,4 +1,5 @@
 RESEARCH_MODE = "training_data"
+SCORING_MODE = "ai_scored"  # "ai_scored" (new: sub-scores within ranges) or "ai_direct" (old: Claude decides 0-100 directly)
 
 COST_ESTIMATES = {
     "training_data": {
@@ -37,3 +38,13 @@ def get_web_search_type():
     elif RESEARCH_MODE == "web_search_brave":
         return "brave"
     return None
+
+def get_scoring_mode():
+    return SCORING_MODE
+
+def set_scoring_mode(mode: str):
+    global SCORING_MODE
+    valid = ["ai_scored", "ai_direct"]
+    if mode not in valid:
+        raise ValueError(f"Invalid scoring mode: {mode}. Use 'ai_scored' or 'ai_direct'")
+    SCORING_MODE = mode

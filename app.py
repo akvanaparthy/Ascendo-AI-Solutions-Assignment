@@ -15,7 +15,7 @@ from config.model_config import (
     get_available_models, save_model_config, load_model_config,
     get_model_display_name, DEFAULT_MODEL
 )
-from config.research_config import get_research_mode, set_research_mode, COST_ESTIMATES
+from config.research_config import get_research_mode, set_research_mode, COST_ESTIMATES, get_scoring_mode, set_scoring_mode
 
 warnings.filterwarnings('ignore', message='.*ScriptRunContext.*')
 
@@ -140,6 +140,29 @@ with st.sidebar:
 
     if research_mode != current_research_mode:
         set_research_mode(research_mode)
+
+    st.markdown("### 📊 Scoring Mode")
+    current_scoring_mode = get_scoring_mode()
+
+    scoring_display = {
+        "ai_scored": "🎯 AI Sub-Scores (new)",
+        "ai_direct": "💯 AI Direct (original)"
+    }
+    scoring_help = {
+        "ai_scored": "Claude scores each metric (industry 0-35, size 0-25, etc.) and we sum them",
+        "ai_direct": "Claude decides the final score (0-100) directly"
+    }
+
+    scoring_mode = st.radio(
+        "Scoring Method",
+        options=["ai_scored", "ai_direct"],
+        format_func=lambda x: scoring_display[x],
+        index=["ai_scored", "ai_direct"].index(current_scoring_mode)
+    )
+    st.caption(scoring_help[scoring_mode])
+
+    if scoring_mode != current_scoring_mode:
+        set_scoring_mode(scoring_mode)
 
     st.markdown("---")
 
