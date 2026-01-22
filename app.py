@@ -193,6 +193,7 @@ with st.sidebar:
         key="min_confidence_widget"
     )
     st.session_state.min_confidence = min_confidence
+    st.caption("Filters companies by extraction confidence (0.95=high, 0.75=fallback)")
 
     st.markdown("### Research Mode")
     current_research_mode = get_research_mode()
@@ -395,6 +396,7 @@ if st.session_state.running:
         st.session_state.completed = True
         st.session_state.running = False
         st.session_state.thread_started = False
+        st.session_state.end_time = time.time()
         time.sleep(0.5)
         st.rerun()
     else:
@@ -416,17 +418,17 @@ elif st.session_state.completed:
 
     if df is not None:
         col1, col2, col3, col4 = st.columns(4)
+        high = len(df[df['icp_score'] >= 70])
+        med = len(df[(df['icp_score'] >= 45) & (df['icp_score'] < 70)])
+        low = len(df[df['icp_score'] < 45])
         with col1:
             st.metric("Total", len(df))
         with col2:
-            high = len(df[df['icp_score'] >= 70])
-            st.metric("High Fit", high, f"{high/len(df)*100:.0f}%")
+            st.metric("High Fit (70+)", f"{high} ({high*100//len(df)}%)")
         with col3:
-            med = len(df[(df['icp_score'] >= 45) & (df['icp_score'] < 70)])
-            st.metric("Medium", med)
+            st.metric("Medium (45-69)", f"{med} ({med*100//len(df)}%)")
         with col4:
-            low = len(df[df['icp_score'] < 45])
-            st.metric("Low", low)
+            st.metric("Low (<45)", f"{low} ({low*100//len(df)}%)")
 
         st.header("Distribution")
         col1, col2 = st.columns(2)
@@ -491,8 +493,9 @@ elif st.session_state.completed:
                 with open(log_file, 'r', encoding='utf-8') as f:
                     st.download_button("Download Logs", f.read(), os.path.basename(log_file), "text/plain")
 
-        if 'start_time' in st.session_state and not st.session_state.loaded_analysis:
-            st.info(f"Time: {time.time() - st.session_state.start_time:.1f}s")
+        if 'start_time' in st.session_state and 'end_time' in st.session_state and not st.session_state.loaded_analysis:
+            duration = st.session_state.end_time - st.session_state.start_time
+            st.info(f"Time: {duration:.1f}s")
     else:
         st.error("Results not found")
 
