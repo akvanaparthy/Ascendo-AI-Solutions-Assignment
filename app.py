@@ -79,11 +79,6 @@ with st.sidebar:
 
     selected_model = model_options[selected_display]
 
-    for model in available_models:
-        if model['id'] == selected_model:
-            st.caption(model.get('description', ''))
-            break
-
     if selected_model != current_model:
         save_model_config(selected_model)
 
@@ -92,7 +87,7 @@ with st.sidebar:
 
     max_companies = st.number_input(
         "Max Companies", min_value=1, max_value=10000,
-        value=st.session_state.max_companies, step=10,
+        value=st.session_state.max_companies, step=1,
         key="max_companies_widget"
     )
     st.session_state.max_companies = max_companies
@@ -119,9 +114,6 @@ with st.sidebar:
         format_func=lambda x: mode_display[x],
         index=["training_data", "web_search_anthropic", "web_search_brave"].index(current_research_mode)
     )
-
-    cost_info = COST_ESTIMATES[research_mode]
-    st.caption(f"**Cost (50):** {cost_info['total_50']}")
 
     if research_mode == "web_search_brave":
         if not os.getenv('BRAVE_API_KEY'):
