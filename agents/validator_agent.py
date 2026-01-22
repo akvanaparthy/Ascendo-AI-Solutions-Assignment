@@ -1,4 +1,5 @@
 import sys
+import re
 from crewai import Agent, Task
 from anthropic import Anthropic
 from config.icp_criteria import ICP_CRITERIA, SCORING_WEIGHTS
@@ -92,22 +93,29 @@ def research_company(company_name: str, client: Anthropic, model: str = None) ->
         if live_logger.is_cancelled():
             return {"industry": "unknown", "has_field_service": False, "confidence": "low"}
 
-        response_text = None
+        all_text = []
         for block in response.content:
-            if hasattr(block, 'text'):
-                response_text = block.text.strip()
-                break
+            if hasattr(block, 'text') and block.text:
+                all_text.append(block.text.strip())
 
-        if not response_text:
+        if not all_text:
             raise ValueError("No text in response")
 
-        if response_text.startswith('```'):
-            response_text = response_text.split('```')[1]
-            if response_text.startswith('json'):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
+        response_text = "\n".join(all_text)
 
-        data = json.loads(response_text)
+        json_match = None
+        code_block = re.search(r'```(?:json)?\s*([\s\S]*?)```', response_text)
+        if code_block:
+            json_match = code_block.group(1).strip()
+        else:
+            brace_match = re.search(r'\{[\s\S]*\}', response_text)
+            if brace_match:
+                json_match = brace_match.group(0)
+
+        if not json_match:
+            raise ValueError(f"No JSON found in response: {response_text[:200]}")
+
+        data = json.loads(json_match)
         live_logger.log("API_CALL", "agent2", "RESEARCH_SUCCESS",
                        f"Found: {data.get('industry', 'unknown')} | Field service: {data.get('has_field_service', False)}",
                        {"tokens": response.usage.input_tokens + response.usage.output_tokens})
