@@ -1,5 +1,4 @@
-"""CrewAI Orchestration Setup"""
-
+import sys
 from crewai import Crew, Process
 from agents.extractor_agent import create_extractor_agent, create_extraction_task, extract_companies_from_pdfs
 from agents.validator_agent import create_validator_agent, create_validation_task, validate_companies
@@ -7,71 +6,55 @@ from utils.live_logger import live_logger
 
 def run_pipeline(input_dir: str = 'data/input', model: str = None,
                  min_confidence: float = 0.7, max_companies: int = None) -> dict:
-    """
-    Execute the full pipeline - processes ALL PDFs in input directory.
-    Flexible: works with any conference PDFs (agenda, speakers, attendees, etc.)
 
-    Args:
-        input_dir: Directory containing PDFs
-        model: Claude model to use
-        min_confidence: Skip companies below this confidence (default 0.7)
-        max_companies: Limit validation to first N companies (default None = all)
-    """
-
-    print("🚀 Starting Conference ICP Validation Pipeline...")
     print("=" * 60)
+    print("🚀 Starting Pipeline...")
+    print(f"  → input_dir: {input_dir}")
+    print(f"  → model: {model}")
+    print(f"  → min_confidence: {min_confidence}")
+    print(f"  → max_companies: {max_companies}")
+    print("=" * 60)
+    sys.stdout.flush()
 
-    # Step 1: Extract companies from ALL PDFs (Agent 1)
+    live_logger.log("INFO", "system", "PIPELINE_START",
+                   f"Starting pipeline with max_companies={max_companies}")
+
     extraction_result = extract_companies_from_pdfs(input_dir)
 
-    # Check if cancelled during extraction
     if live_logger.is_cancelled():
-        print("\n⚠️ Pipeline cancelled after extraction phase")
-        log_file, json_file = live_logger.save_to_file()
-        return {
-            'extraction': extraction_result,
-            'validation': {'error': 'Pipeline cancelled by user'}
-        }
+        print("\n⚠️ Cancelled after extraction")
+        sys.stdout.flush()
+        live_logger.save_to_file()
+        return {'extraction': extraction_result, 'validation': {'error': 'Cancelled'}}
 
     print("\n" + "=" * 60)
+    sys.stdout.flush()
 
-    # Step 2: Validate companies (Agent 2)
     validation_result = validate_companies('data/output/raw_companies.json', model,
                                           min_confidence, max_companies)
 
     print("\n" + "=" * 60)
     print("✅ Pipeline Complete!")
-    print(f"📊 Results saved to: data/output/validated_companies.csv")
+    print(f"📊 Results: data/output/validated_companies.csv")
+    sys.stdout.flush()
 
-    # Save logs
     log_file, json_file = live_logger.save_to_file()
-    print(f"📋 Session logs saved to: {log_file}")
-    print(f"📋 Session logs (JSON) saved to: {json_file}")
+    print(f"📋 Logs: {log_file}")
+    sys.stdout.flush()
 
-    return {
-        'extraction': extraction_result,
-        'validation': validation_result
-    }
+    return {'extraction': extraction_result, 'validation': validation_result}
 
 def run_with_crewai(input_dir: str = 'data/input') -> dict:
-    """
-    Alternative: Execute the full pipeline with CrewAI orchestration.
-    Note: CrewAI works better with agents that use its built-in tools.
-    For this project, direct function calls are more efficient.
-    """
-
-    print("🚀 Starting Conference ICP Validation Pipeline (CrewAI Mode)...")
+    print("🚀 Starting Pipeline (CrewAI Mode)...")
     print("=" * 60)
+    sys.stdout.flush()
 
-    # Create agents
     extractor = create_extractor_agent()
     validator = create_validator_agent()
 
-    # Create tasks
     extraction_task = create_extraction_task(extractor)
     validation_task = create_validation_task(validator, extraction_task)
 
-    # Create crew
     crew = Crew(
         agents=[extractor, validator],
         tasks=[extraction_task, validation_task],
@@ -79,11 +62,10 @@ def run_with_crewai(input_dir: str = 'data/input') -> dict:
         verbose=True
     )
 
-    # Execute
     result = crew.kickoff()
 
     print("\n" + "=" * 60)
-    print("✅ Pipeline Complete!")
-    print(f"📊 Results saved to: data/output/validated_companies.csv")
+    print("✅ Complete!")
+    sys.stdout.flush()
 
     return result
